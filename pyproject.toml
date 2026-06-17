@@ -37,7 +37,8 @@ dependencies = [
 images     = ["Pillow>=10.0"]
 kpi        = ["pandas>=2.0", "openpyxl>=3.1"]
 validation = ["pydantic>=2.0"]
-full       = ["emupipeline[images,kpi,validation]"]
+tui        = ["textual>=0.50"]
+full       = ["emupipeline[images,kpi,validation,tui]"]
 dev        = [
     "emupipeline[full]",
     "pytest>=8.0",
@@ -53,8 +54,9 @@ dev        = [
 # ENTRY POINTS
 # ===========================================================================
 [project.scripts]
-# pip install emupipeline  →  comando `emupipeline` disponível globalmente
-emupipeline = "emupipeline.cli:main"
+# pip install emupipeline  →  comandos disponíveis globalmente
+emupipeline     = "emupipeline.cli:main"
+emupipeline-tui = "emupipeline.tui:launch_tui"
 
 [project.entry-points."emupipeline.steps"]
 # Plugins externos declaram seus steps aqui

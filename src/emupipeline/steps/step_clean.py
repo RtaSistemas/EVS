@@ -97,5 +97,26 @@ class OriginalCleaner(BaseProcessor):
         return result
 
     def process_file(self, file_path: Path) -> str:
-        # Não usado — este step tem lógica de batch em run()
-        raise NotImplementedError
+        """Deleta um original individualmente se WebP correspondente for válido."""
+        if file_path.suffix.lower() not in self._src_exts:
+            return "skipped_ext"
+        webp = file_path.with_suffix(".webp")
+        if not webp.exists() or webp.stat().st_size <= 50:
+            return "no_webp"
+        if self._mode == ExecutionMode.DRY_RUN:
+            self.logger.debug(f"[DRY] deletaria {file_path.name}")
+            return "dry_run"
+        if self._mode == ExecutionMode.AUDIT:
+            assert self._audit is not None
+            self._audit.record(
+                step=self.name, action="delete_original",
+                source=str(file_path), reason=f"WebP existe: {webp.name}",
+                would_delete=True,
+            )
+            return "audit_recorded"
+        try:
+            file_path.unlink()
+            return "deleted"
+        except OSError as exc:
+            self.logger.error(f"Erro ao deletar {file_path.name}: {exc}")
+            return "error"

@@ -172,6 +172,10 @@ def parse_args() -> argparse.Namespace:
                         help="Gera relatório de operações sem modificar disco")
     parser.add_argument("--config",    metavar="PATH",
                         help="Caminho alternativo para config.yaml")
+    parser.add_argument("--tui",       action="store_true",
+                        help="Abre interface gráfica no terminal (requer: pip install emupipeline[tui])")
+    parser.add_argument("--check-env", action="store_true",
+                        help="Verifica dependências e sai")
     parser.add_argument("--version",   action="version",
                         version="%(prog)s 5.0.0")
     return parser.parse_args()
@@ -204,8 +208,26 @@ def main() -> None:
         from emupipeline.core.logger import setup_logger
         setup_logger("CLI").warning(f"Modo {label} ativado.")
 
+    # Verifica ambiente e sai
+    if hasattr(args, "check_env") and args.check_env:
+        from emupipeline.core.config import cfg
+        from emupipeline.core.env_checker import EnvironmentChecker
+        checker = EnvironmentChecker(cfg.schema)
+        checker.check_all()
+        print(checker.report())
+        raise SystemExit(1 if checker.has_critical_failures() else 0)
+
     try:
-        if args.pipeline:
+        if hasattr(args, "tui") and args.tui:
+            try:
+                from emupipeline.tui import launch_tui
+            except ImportError:
+                print("❌  A TUI requer o pacote 'textual':")
+                print("   pip install emupipeline[tui]")
+                raise SystemExit(1)
+            launch_tui(mode=("dry-run" if args.dry_run else
+                             "audit"   if args.audit   else "normal"))
+        elif args.pipeline:
             run_full_pipeline(mode, audit)
         elif args.step is not None:
             _run_step_by_number(args.step, mode, audit)
