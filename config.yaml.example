@@ -1,0 +1,288 @@
+# ===========================================================================
+# EmuPipeline v5.0 — Template de Configuração
+# ===========================================================================
+# Copie este arquivo para config.yaml e ajuste conforme sua instalação:
+#   cp config.yaml.example config.yaml
+#
+# Caminhos:
+#   - ~ é expandido para o home do usuário
+#   - Caminhos relativos na seção "paths" são relativos ao global.base_dir
+#   - Variáveis de ambiente são suportadas: ${HOME}/emulacao
+
+# ---------------------------------------------------------------------------
+# GLOBAL — configurações gerais do pipeline
+# ---------------------------------------------------------------------------
+global:
+  # Diretório raiz. Todos os caminhos relativos da seção "paths" são
+  # resolvidos a partir daqui.
+  base_dir: "~/Documents/emupipeline"
+
+  # Nível de detalhe do log: DEBUG | INFO | WARNING | ERROR
+  logging_level: "INFO"
+
+  # Workers para processamento paralelo (ThreadPoolExecutor).
+  # Recomendado: número de núcleos lógicos da CPU.
+  # Nota: VideoOptimizer usa automaticamente threads // 2 para não
+  # competir com os processos ffmpeg.
+  threads: 8
+
+  # true → grava logs em formato JSON (útil para ingestão em ELK/Grafana)
+  # false → logs em texto legível (padrão)
+  structured_logging: false
+
+# ---------------------------------------------------------------------------
+# PATHS — caminhos de entrada e saída
+# ---------------------------------------------------------------------------
+paths:
+  # DAT Mestre no formato ClrMame Pro XML (FinalBurn Neo, MAME, etc.)
+  dat_file: "dats/FinalBurn Neo (ClrMame Pro XML, Arcade only).dat"
+
+  # catver.ini com mapeamento de gêneros (opcional, mas enriquece gamelist.xml)
+  # Baixe em: http://www.mameworld.info/catver/
+  catver_ini: "dats/catver.ini"
+
+  # Pasta com seus ROMs brutos (entrada do IGIR)
+  input_roms: "source/roms"
+
+  # Pasta com imagens brutas (entrada do organizador)
+  input_imgs: "source/images"
+
+  # Destinos (criados automaticamente se não existirem)
+  output_roms: "output/roms"
+  output_imgs: "output/images"
+  output_xml:  "output/gamelist.xml"
+  output_dats: "output/dats_generated"
+  output_reports: "output/reports"
+  output_logs: "output/logs"
+
+  # Pasta de vídeos (pode ser caminho absoluto externo ao base_dir)
+  videos_dir: "~/Emulation/tools/downloaded_media/ports/videos"
+
+  # Upscaling de imagens
+  upscale_input:  "source/images"
+  upscale_output: "output/images_upscaled"
+
+  # Binários dos upscalers (baixe em GitHub e descompacte)
+  bin_waifu2x:    "~/Applications/waifu2x-ncnn-vulkan/waifu2x-ncnn-vulkan"
+  bin_realesrgan: "~/Applications/realesrgan-ncnn-vulkan/realesrgan-ncnn-vulkan"
+
+# ---------------------------------------------------------------------------
+# ROMS — step_dat_split e step_rom_manager (IGIR)
+# ---------------------------------------------------------------------------
+roms:
+  # Habilita/desabilita a execução do IGIR no Step 2
+  enable_igir: true
+
+  # true  → gera múltiplos DATs por driver (cps1.dat, neogeo.dat, ...)
+  # false → gera um único DAT com todos os jogos aprovados pelos filtros
+  split_by_driver: true
+
+  # Nome do arquivo no modo combined (split_by_driver: false)
+  combined_filename: "FBNeo_Optimized.dat"
+
+  # Cria subpastas por driver: output/roms/cps1/sf2.zip
+  organize_subfolders: true
+
+  # Modo de merge do IGIR:
+  #   nonmerged → cada ZIP é independente (mais espaço, mais simples)
+  #   split     → clones referenciam o parent
+  #   merged    → clones e parent no mesmo ZIP
+  # Recomendado para EmuDeck: nonmerged
+  merge_mode: "nonmerged"
+
+  # Preferência regional (IGIR usa essa ordem para desempate)
+  filter_regions: "WORLD,BRA,USA,EUR,JPN"
+
+  # Threads de I/O do IGIR (2-4 para HDD, até 8 para SSD NVMe)
+  threads_io: 4
+
+  # Extrai BIOS em arquivo separado
+  generate_bios_file: false
+  bios_filename: "00_BIOS_Global.dat"
+
+  # Remove jogos marcados como cloneof do DAT gerado
+  exclude_clones: true
+
+  # Palavras-chave para excluir jogos pelo título da descrição (case-insensitive)
+  # Adicione ou remova conforme sua preferência
+  blacklist:
+    - "mahjong"
+    - "hanafuda"
+    - "quiz"
+    - "trivia"
+    - "poker"
+    - "casino"
+    - "roulette"
+    - "slot"
+    - "gambling"
+    - "adult"
+    - "erotic"
+    - "shogi"
+    - "bootleg"
+    - "hack"
+    - "demo"
+
+# ---------------------------------------------------------------------------
+# IMAGES — step_organize
+# ---------------------------------------------------------------------------
+images:
+  # subfolders → output/images/cps1/sf2.png (organizado por driver)
+  # flat       → output/images/sf2.png (tudo na mesma pasta)
+  organization_mode: "subfolders"
+
+  # symlink → link simbólico relativo (sem duplicar espaço em disco)
+  # copy    → cópia física (independente da fonte; use para discos externos)
+  mode: "symlink"
+
+  # Sobrescrever arquivo de destino se já existir?
+  overwrite: false
+
+  # Threshold do fuzzy match.
+  # 0.0 = aceita qualquer similaridade (perigoso — muitos matches falsos)
+  # 0.8 = bom balanço (recomendado)
+  # 1.0 = apenas match exato de string normalizada
+  fuzzy_threshold: 0.80
+
+  # Extensões de imagem processadas
+  valid_extensions:
+    - ".png"
+    - ".jpg"
+    - ".jpeg"
+    - ".gif"
+    - ".webp"
+
+# ---------------------------------------------------------------------------
+# WEBP — step_convert
+# ---------------------------------------------------------------------------
+webp:
+  # Qualidade WebP (1-100).
+  # 85 = visualmente indistinguível do PNG com ~70% menos espaço.
+  quality: 85
+
+  # ATENÇÃO: delete_original=true em step_convert foi removido na v5.
+  # Use step_clean (opção 12 no menu) para deletar os originais de forma
+  # explícita e com confirmação. Esta configuração é usada pelo step_clean.
+  delete_original: true
+
+  # Extensões de entrada para conversão
+  source_extensions:
+    - ".png"
+    - ".jpg"
+    - ".jpeg"
+    - ".bmp"
+
+# ---------------------------------------------------------------------------
+# VIDEOS — step_optimize
+# ---------------------------------------------------------------------------
+videos:
+  # Codec de saída:
+  #   libx265 → H.265/HEVC (~50% menor que H.264 com mesma qualidade)
+  #   libx264 → H.264/AVC  (máxima compatibilidade)
+  codec: "libx265"
+
+  # CRF — Constant Rate Factor (qualidade vs tamanho):
+  #   0  = sem perdas (arquivo enorme)
+  #   18 = qualidade excelente
+  #   23 = padrão do ffmpeg (boa qualidade)
+  #   28 = adequado para retro gaming (vídeos já têm resolução baixa)
+  #   51 = pior qualidade possível
+  crf: 28
+
+  # Preset de codificação (velocidade vs eficiência):
+  # ultrafast → veryslow (mais lento = arquivo menor)
+  preset: "fast"
+
+  # Apagar vídeo original após reencoding bem-sucedido?
+  # ATENÇÃO: irreversível. O atomic_write garante que o original só
+  # é apagado após o novo arquivo ser validado e commitado.
+  delete_original: true
+
+  # Pular vídeos que já estão no codec correto?
+  # RECOMENDADO: true — evita reencoding desnecessário.
+  smart_skip: true
+
+  # Extensões de vídeo processadas
+  extensions:
+    - ".mp4"
+    - ".avi"
+    - ".mkv"
+    - ".mov"
+    - ".flv"
+    - ".wmv"
+    - ".webm"
+
+# ---------------------------------------------------------------------------
+# UPSCALE — step_upscale
+# ---------------------------------------------------------------------------
+upscale:
+  # Engine de upscaling:
+  # null      → pergunta interativamente
+  # waifu2x   → ideal para arte 2D, pixel art, anime
+  # realesrgan → ideal para renders 3D, fotos, texturas realistas
+  engine: null
+
+  # Fator de escala: 2 ou 4
+  # Nota: scale=4 requer ~4x mais VRAM — cuidado em GPUs com <8GB
+  scale: 2
+
+  # Formato de saída das imagens upscaladas
+  output_format: "webp"
+
+  # Workers paralelos. Geralmente 1-2 (limitado pela GPU, não pela CPU).
+  workers: 2
+
+  # Buscar imagens recursivamente em subpastas?
+  recursive: false
+
+  # Aplicar pós-processamento com ImageMagick após upscaling?
+  # Adiciona unsharp mask e ruído gaussiano sutil para naturalidade.
+  post_process: true
+  unsharp: "0x1.0+1.0+0.02"
+  noise: "0.5"
+
+# ---------------------------------------------------------------------------
+# COMPARE — step_compare
+# ---------------------------------------------------------------------------
+compare:
+  # Pasta de saída para arquivos em comum
+  # ATENÇÃO: este diretório é APAGADO e recriado a cada execução
+  output_dir: "output/common_files"
+
+  # true  → copia arquivos em comum para output_dir
+  # false → apenas lista no console, não copia nada
+  copy_common: true
+
+# ---------------------------------------------------------------------------
+# PORTS — step_ports
+# ---------------------------------------------------------------------------
+ports:
+  # Pasta com as pastas dos ports (uma pasta por jogo)
+  source_dir: "~/Emulation/ports"
+
+  # Onde criar os arquivos .desktop gerados
+  output_dir: "~/Emulation/tools/ports_launchers"
+
+  # Remover ".plus" do nome das pastas antes de processar?
+  # Útil para estruturas EmuDeck com "PortName.plus/"
+  rename_plus_folders: false
+
+  # Runner para executáveis Windows.
+  # Use caminho absoluto para runners alternativos (WineGE, Proton):
+  # "~/.local/share/lutris/runners/wine/wine-ge-8-26-x86_64/bin/wine"
+  windows_runner: "wine"
+
+  # Prefixar execução com gamemoderun (requer gamemode instalado)?
+  enable_gamemode: false
+
+  # Prefixar execução com mangohud (requer MangoHud instalado)?
+  enable_mangohud: false
+
+  # Extensões consideradas executáveis Windows
+  windows_extensions:
+    - ".exe"
+
+  # Variáveis de ambiente injetadas no autorun.sh de jogos Windows
+  windows_environment:
+    ESYNC: "1"
+    FSYNC: "1"
+    # DXVK_HUD: "fps,frametime"   # descomente para debug de performance

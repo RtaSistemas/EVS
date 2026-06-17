@@ -1,0 +1,94 @@
+# ===========================================================================
+# EmuPipeline — .gitignore
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Distribuição / packaging
+.eggs/
+*.egg-info/
+dist/
+build/
+wheels/
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ---------------------------------------------------------------------------
+# Ferramentas de desenvolvimento
+# ---------------------------------------------------------------------------
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# ---------------------------------------------------------------------------
+# Dados do projeto (NÃO versionar dados do usuário)
+# ---------------------------------------------------------------------------
+
+# DATs e caches
+dats/*.pickle
+dats/*.dat
+!dats/.gitkeep
+
+# ROMs (nunca versionar)
+source/roms/
+output/roms/
+
+# Imagens (podem ser grandes, use Git LFS se necessário)
+source/images/
+output/images/
+source/videos/
+output/videos/
+
+# Relatórios gerados
+output/reports/
+output/logs/
+output/dats_generated/
+output/gamelist.xml
+output/*.xml
+output/*.csv
+output/*.html
+output/*.json
+
+# ---------------------------------------------------------------------------
+# Config do usuário (template versionado, config real não)
+# ---------------------------------------------------------------------------
+config.yaml
+!config.yaml.example
+
+# ---------------------------------------------------------------------------
+# IDEs e editores
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Temporários
+# ---------------------------------------------------------------------------
+*.tmp
+*.bak
+*.log
+.tmp_*/

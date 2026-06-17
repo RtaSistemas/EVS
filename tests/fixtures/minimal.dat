@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<datafile>
+  <header>
+    <name>Test DAT</name>
+    <description>Minimal DAT for EmuPipeline tests</description>
+    <version>1.0</version>
+    <author>EmuPipeline Tests</author>
+  </header>
+
+  <!-- CPS-1 games -->
+  <game name="sf2" sourcefile="capcom/cps1.cpp">
+    <description>Street Fighter II: The World Warrior</description>
+    <rom name="sf2.zip" size="1234" crc="aabbccdd"/>
+  </game>
+  <game name="sf2ce" cloneof="sf2" sourcefile="capcom/cps1.cpp">
+    <description>Street Fighter II': Champion Edition</description>
+    <rom name="sf2ce.zip" size="1235" crc="aabbccde"/>
+  </game>
+  <game name="sf2hf" cloneof="sf2" sourcefile="capcom/cps1.cpp">
+    <description>Street Fighter II': Hyper Fighting</description>
+    <rom name="sf2hf.zip" size="1236" crc="aabbccdf"/>
+  </game>
+  <game name="ff" sourcefile="capcom/cps1.cpp">
+    <description>Final Fight</description>
+    <rom name="ff.zip" size="2000" crc="11223344"/>
+  </game>
+
+  <!-- NeoGeo games -->
+  <game name="kof97" sourcefile="neogeo/neogeo.cpp">
+    <description>The King of Fighters '97</description>
+    <rom name="kof97.zip" size="5000" crc="deadbeef"/>
+  </game>
+  <game name="mslug" sourcefile="neogeo/neogeo.cpp">
+    <description>Metal Slug - Super Vehicle-001</description>
+    <rom name="mslug.zip" size="6000" crc="cafebabe"/>
+  </game>
+  <game name="mslug2" cloneof="mslug" sourcefile="neogeo/neogeo.cpp">
+    <description>Metal Slug 2 - Super Vehicle-001/II</description>
+    <rom name="mslug2.zip" size="6001" crc="cafebabf"/>
+  </game>
+
+  <!-- Blacklist candidates (para testar filtros) -->
+  <game name="mjmahjng" sourcefile="misc/mahjong.cpp">
+    <description>Mahjong Fancy Game</description>
+    <rom name="mjmahjng.zip" size="100" crc="00000001"/>
+  </game>
+  <game name="hackgame" sourcefile="misc/hack.cpp">
+    <description>Street Fighter II Hack Edition</description>
+    <rom name="hackgame.zip" size="101" crc="00000002"/>
+  </game>
+
+  <!-- BIOS entry -->
+  <game name="neogeo" sourcefile="neogeo/neogeo.cpp" isbios="yes">
+    <description>Neo-Geo</description>
+    <rom name="neogeo.zip" size="500" crc="beefdead"/>
+  </game>
+</datafile>
