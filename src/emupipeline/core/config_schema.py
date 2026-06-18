@@ -186,11 +186,14 @@ else:  # pragma: no cover
         """Namespace simples que expõe atributos de um dict."""
         def __init__(self, d: dict, base: Path | None = None) -> None:
             for k, v in d.items():
-                if base and isinstance(v, str) and not v.startswith("/") and not v.startswith("~"):
-                    v = str((base / v).resolve())
-                setattr(self, k, _expand_path(v) if isinstance(v, str) else v)
+                if isinstance(v, str) and base:
+                    if not v.startswith("/") and not v.startswith("~"):
+                        v = str((base / v).resolve())
+                    setattr(self, k, _expand_path(v))
+                else:
+                    setattr(self, k, v)
         def __getattr__(self, name: str) -> None:
-            return None
+            raise AttributeError(name)
 
     class ConfigSchema:  # type: ignore[no-redef]
         def __init__(self, raw: dict) -> None:

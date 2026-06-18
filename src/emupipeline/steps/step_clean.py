@@ -18,6 +18,7 @@ from emupipeline.core.execution_mode import AuditReport, ExecutionMode
 from emupipeline.core.processor import BaseProcessor
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
+from emupipeline.core.utils import is_valid_webp
 
 
 @register
@@ -51,17 +52,19 @@ class OriginalCleaner(BaseProcessor):
             self.logger.info("Nenhum original com WebP correspondente encontrado.")
             return
 
-        print(f"\n  Encontrados {len(candidates)} arquivo(s) com WebP correspondente.")
-        print(f"  Diretório: {source_dir}")
-        print(f"\n  ⚠️  Esta operação é IRREVERSÍVEL.")
+        self.logger.info(f"Encontrados {len(candidates)} arquivo(s) com WebP correspondente.")
+        self.logger.info(f"Diretório: {source_dir}")
+        self.logger.warning("Esta operação é IRREVERSÍVEL.")
 
         if self._mode == ExecutionMode.DRY_RUN:
-            print(f"\n  [DRY-RUN] Deletaria {len(candidates)} arquivo(s).")
+            self.logger.info(f"[DRY-RUN] Deletaria {len(candidates)} arquivo(s).")
             return
 
         if self._mode == ExecutionMode.AUDIT:
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return
             for orig, webp in candidates:
-                assert self._audit is not None
                 self._audit.record(
                     step=self.name, action="delete_original",
                     source=str(orig), reason=f"WebP existe: {webp.name}",
@@ -69,6 +72,10 @@ class OriginalCleaner(BaseProcessor):
                 )
             return
 
+        import sys
+        if not sys.stdin.isatty():
+            self.logger.error("Confirmação requerida mas stdin não é um terminal. Abortando.")
+            return
         confirm = input("\n  Digite 'DELETAR' para confirmar: ").strip()
         if confirm != "DELETAR":
             self.logger.warning("Operação cancelada.")
@@ -86,13 +93,13 @@ class OriginalCleaner(BaseProcessor):
         self.logger.info(f"Deletados: {stats.get('deleted', 0)} | Erros: {stats.get('error', 0)}")
 
     def _find_candidates(self, directory: Path) -> list[tuple[Path, Path]]:
-        """Retorna (original, webp) onde o WebP existe e é válido (> 50 bytes)."""
+        """Retorna (original, webp) onde o WebP existe e é válido."""
         result: list[tuple[Path, Path]] = []
         for orig in directory.rglob("*"):
             if orig.suffix.lower() not in self._src_exts:
                 continue
             webp = orig.with_suffix(".webp")
-            if webp.exists() and webp.stat().st_size > 50:
+            if is_valid_webp(webp):
                 result.append((orig, webp))
         return result
 
@@ -101,13 +108,15 @@ class OriginalCleaner(BaseProcessor):
         if file_path.suffix.lower() not in self._src_exts:
             return "skipped_ext"
         webp = file_path.with_suffix(".webp")
-        if not webp.exists() or webp.stat().st_size <= 50:
+        if not is_valid_webp(webp):
             return "no_webp"
         if self._mode == ExecutionMode.DRY_RUN:
             self.logger.debug(f"[DRY] deletaria {file_path.name}")
             return "dry_run"
         if self._mode == ExecutionMode.AUDIT:
-            assert self._audit is not None
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return "error"
             self._audit.record(
                 step=self.name, action="delete_original",
                 source=str(file_path), reason=f"WebP existe: {webp.name}",

@@ -40,8 +40,15 @@ class FolderComparator:
 
     def run(self, dir_a: str = "", dir_b: str = "", **kwargs: Any) -> None:
         if not dir_a or not dir_b:
-            dir_a = input("Pasta A: ").strip()
-            dir_b = input("Pasta B: ").strip()
+            cmp_cfg = self._cfg.get("compare")
+            dir_a = dir_a or getattr(cmp_cfg, "source_a", "") or ""
+            dir_b = dir_b or getattr(cmp_cfg, "source_b", "") or ""
+        if not dir_a or not dir_b:
+            log.error(
+                "Diretórios não fornecidos. "
+                "Passe dir_a/dir_b como parâmetros ou configure compare.source_a e compare.source_b."
+            )
+            return
 
         pa, pb = Path(dir_a), Path(dir_b)
         if not pa.exists() or not pb.exists():
@@ -55,9 +62,9 @@ class FolderComparator:
         only_b  = sorted(names_b - names_a)
         common  = sorted(names_a & names_b)
 
-        print(f"\n  Exclusivos em A : {len(only_a)}")
-        print(f"  Exclusivos em B : {len(only_b)}")
-        print(f"  Em comum        : {len(common)}")
+        log.info(f"Exclusivos em A : {len(only_a)}")
+        log.info(f"Exclusivos em B : {len(only_b)}")
+        log.info(f"Em comum        : {len(common)}")
 
         self._stats = {"only_a": len(only_a), "only_b": len(only_b), "common": len(common)}
 

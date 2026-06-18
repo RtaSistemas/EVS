@@ -43,11 +43,11 @@ class Upscaler:
         engine = getattr(up_cfg, "engine", None)
 
         if not engine:
-            print("\n  Escolha o engine de upscaling:")
-            print("  1. waifu2x-ncnn-vulkan (arte 2D, pixel art, retro)")
-            print("  2. Real-ESRGAN (renders 3D, fotografias)")
-            choice = input("  Opção (1/2): ").strip()
-            engine = "waifu2x" if choice == "1" else "realesrgan"
+            log.error(
+                "upscale.engine não configurado. "
+                "Defina 'waifu2x' ou 'realesrgan' em config.yaml → upscale.engine"
+            )
+            return
 
         bin_attr = "bin_waifu2x" if engine == "waifu2x" else "bin_realesrgan"
         bin_path = self._cfg.get("paths", bin_attr)

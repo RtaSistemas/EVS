@@ -22,6 +22,7 @@ from emupipeline.core.processor import BaseProcessor, ExecutorType
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 from emupipeline.core.transaction import atomic_write
+from emupipeline.core.utils import MIN_WEBP_BYTES
 
 
 @register
@@ -66,7 +67,9 @@ class WebPConverter(BaseProcessor):
             return "skipped_exists"
 
         if self._mode == ExecutionMode.AUDIT:
-            assert self._audit is not None
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return "error"
             self._audit.record(
                 step=self.name, action="convert_to_webp",
                 source=str(file_path), dest=str(dest),
@@ -100,9 +103,9 @@ class WebPConverter(BaseProcessor):
                     img.save(tmp, "WEBP", quality=self.quality, method=4)
 
             # Verificação de integridade mínima
-            if dest.stat().st_size < 50:
+            if dest.stat().st_size < MIN_WEBP_BYTES:
                 dest.unlink(missing_ok=True)
-                self.logger.warning(f"WebP suspeito (< 50 bytes): {file_path.name} — original preservado")
+                self.logger.warning(f"WebP suspeito (< {MIN_WEBP_BYTES} bytes): {file_path.name} — original preservado")
                 return "error"
 
             return "converted"

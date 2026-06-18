@@ -207,7 +207,8 @@ class TestConvertCleanSeparation:
         from emupipeline.steps.step_clean import OriginalCleaner
         cleaner = OriginalCleaner()
 
-        with patch("builtins.input", return_value="DELETAR"):
+        with patch("builtins.input", return_value="DELETAR"), \
+             patch("sys.stdin.isatty", return_value=True):
             cleaner.run()
 
         assert not (out_imgs / "sf2.png").exists()

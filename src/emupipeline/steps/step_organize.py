@@ -89,7 +89,9 @@ class ImageOrganizer(BaseProcessor):
         if file_path.suffix.lower() not in self._valid_exts:
             return "skipped_ext"
 
-        assert self._dat is not None
+        if self._dat is None:
+            self.logger.error("DatMaster não disponível em _match_and_place.")
+            return "error"
         game, match_type = self._dat.search(file_path.name, self._fuzzy_threshold)
 
         if game is None:
@@ -110,7 +112,9 @@ class ImageOrganizer(BaseProcessor):
             return "skipped_exists"
 
         if self._mode == ExecutionMode.AUDIT:
-            assert self._audit is not None
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return "error"
             self._audit.record(
                 step=self.name, action=f"create_{self._mode_img}",
                 source=str(file_path), dest=str(dest),

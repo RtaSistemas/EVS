@@ -14,8 +14,6 @@ Foco em:
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -248,3 +246,25 @@ class TestUnmatchedReport:
 
         if hasattr(organizer, "_unmatched"):
             assert str(src) in organizer._unmatched or src.name in organizer._unmatched
+
+
+# ---------------------------------------------------------------------------
+# Modo AUDIT sem AuditReport
+# ---------------------------------------------------------------------------
+
+class TestAuditWithoutReport:
+    def test_audit_without_report_returns_error(self, dat, config_factory, tmp_path):
+        """AUDIT sem AuditReport injetado retorna 'error' em _match_and_place."""
+        config_factory({"images": {"mode": "copy", "organization_mode": "flat",
+                                    "overwrite": False, "fuzzy_threshold": 0.80,
+                                    "valid_extensions": [".png"]}})
+        from emupipeline.steps.step_organize import ImageOrganizer
+        org = ImageOrganizer(dat, mode=ExecutionMode.AUDIT, audit=None)
+
+        src = tmp_path / "sf2.png"
+        src.write_bytes(b"PNG")
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        result = org._match_and_place(src, out_dir)
+        assert result == "error"

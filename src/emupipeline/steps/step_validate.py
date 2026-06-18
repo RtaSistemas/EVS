@@ -64,14 +64,14 @@ class RomValidator:
         extras  = sorted(local_names - dat_names)
         found   = len(dat_names) - len(missing)
 
-        print(f"\n{'='*50}")
-        print(f"VALIDAÇÃO DO ROMSET")
-        print(f"{'='*50}")
-        print(f"Total no DAT  : {len(dat_names)}")
-        print(f"Encontrados   : {found}")
-        print(f"Faltantes     : {len(missing)}")
-        print(f"Extras        : {len(extras)}")
-        print(f"{'='*50}\n")
+        log.info("=" * 50)
+        log.info("VALIDAÇÃO DO ROMSET")
+        log.info("=" * 50)
+        log.info(f"Total no DAT  : {len(dat_names)}")
+        log.info(f"Encontrados   : {found}")
+        log.info(f"Faltantes     : {len(missing)}")
+        log.info(f"Extras        : {len(extras)}")
+        log.info("=" * 50)
 
         self._stats = {
             "dat_total": len(dat_names),
