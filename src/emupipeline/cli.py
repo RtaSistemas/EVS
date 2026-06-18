@@ -76,6 +76,50 @@ def _run_step_by_number(number: int, mode, audit=None) -> None:
         step.run()
 
 
+def _run_pipeline(
+    dat=None,
+    mode=None,
+    audit=None,
+    stop_on_error: bool = True,
+) -> None:
+    """Pipeline programático sem prompts interativos (para uso em testes e scripts)."""
+    from emupipeline.core.execution_mode import ExecutionMode as _EM
+    from emupipeline.core.logger import setup_logger
+    from emupipeline.core.registry import autodiscover, get_pipeline_steps
+
+    if mode is None:
+        mode = _EM.NORMAL
+
+    autodiscover()
+    log = setup_logger("Pipeline")
+    pipeline_steps = get_pipeline_steps()
+
+    for cls in pipeline_steps:
+        try:
+            step = _make_step(cls, mode, audit)
+            if cls.meta.requires_dat:
+                _dat = dat
+                if _dat is None:
+                    _dat = _load_dat()
+                if _dat is None:
+                    log.warning(f"DAT não disponível, pulando {cls.meta.id}")
+                    continue
+                step.run(dat=_dat)
+            else:
+                step.run()
+        except Exception as exc:
+            log.error(f"Erro em '{cls.meta.label}': {exc}")
+            if stop_on_error:
+                raise
+
+    if audit is not None:
+        from emupipeline.core.config import cfg
+        reports = cfg.get("paths", "output_reports")
+        if reports:
+            audit.export_json(Path(str(reports)) / "audit_report.json")
+            audit.export_html(Path(str(reports)) / "audit_report.html")
+
+
 def run_full_pipeline(mode, audit=None) -> None:
     from emupipeline.core.logger import setup_logger
     from emupipeline.core.registry import get_pipeline_steps

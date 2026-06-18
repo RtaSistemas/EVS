@@ -194,24 +194,24 @@ class TestConvertCleanSeparation:
     def test_cleaner_only_deletes_if_webp_exists(self, full_project, config_factory):
         """OriginalCleaner só apaga PNG se houver WebP correspondente."""
         config_factory()
-        imgs_dir = full_project / "source" / "images"
+        # OriginalCleaner lê paths.output_imgs (não source/images)
+        out_imgs = full_project / "output" / "images"
+        out_imgs.mkdir(parents=True, exist_ok=True)
 
-        # Cria um WebP manualmente (simula conversão feita)
-        (imgs_dir / "sf2.webp").write_bytes(b"WEBP_DATA")
+        # PNG com WebP válido (>50 bytes) — deve ser deletado
+        (out_imgs / "sf2.png").write_bytes(b"PNG_DATA" * 20)
+        (out_imgs / "sf2.webp").write_bytes(b"WEBP_DATA" * 20)
+        # PNG sem WebP correspondente — deve ser preservado
+        (out_imgs / "kof97.jpg").write_bytes(b"JPG_DATA" * 20)
 
         from emupipeline.steps.step_clean import OriginalCleaner
         cleaner = OriginalCleaner()
-        cleaner._source_dir = imgs_dir
-        cleaner._extensions = {".png", ".jpg"}
 
-        # Simula confirmação do usuário
         with patch("builtins.input", return_value="DELETAR"):
             cleaner.run()
 
-        # sf2.png deve ter sido deletado (tem WebP correspondente)
-        assert not (imgs_dir / "sf2.png").exists()
-        # kof97.jpg deve permanecer (não tem WebP correspondente)
-        assert (imgs_dir / "kof97.jpg").exists()
+        assert not (out_imgs / "sf2.png").exists()
+        assert (out_imgs / "kof97.jpg").exists()
 
 
 # ---------------------------------------------------------------------------

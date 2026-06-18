@@ -20,7 +20,6 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
-from emupipeline.core.config import cfg
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
 from emupipeline.core.logger import setup_logger
 from emupipeline.core.metrics import StepMetrics
@@ -147,7 +146,7 @@ class BaseProcessor(ABC):
             self.logger.warning("Nenhum arquivo para processar.")
             return
 
-        n_threads = threads or cfg.get("global", "threads", 4)
+        n_threads = threads or self.config.get("global", "threads", 4)
         total = len(files)
         self.logger.info(f"Processando {total} arquivo(s) com {n_threads} worker(s).")
 

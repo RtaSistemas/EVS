@@ -53,30 +53,17 @@ class TestWebPConverter:
 
     def test_does_not_delete_original(self, config_factory, tmp_project):
         """WebPConverter NÃO deve deletar o original (responsabilidade do OriginalCleaner)."""
+        pytest.importorskip("PIL", reason="Pillow não instalado")
         config_factory()
+        from PIL import Image
+
         img = tmp_project / "source" / "images" / "test.png"
-        img.write_bytes(b"fake_png")
+        img.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (10, 10), color="red").save(img, "PNG")
 
-        # Mocka PIL para simular conversão bem-sucedida
-        mock_img = MagicMock()
-        mock_img.__enter__ = lambda s: mock_img
-        mock_img.__exit__ = MagicMock(return_value=False)
-        mock_img.mode = "RGB"
-        mock_img.save = MagicMock()
+        converter = WebPConverter(mode=ExecutionMode.NORMAL)
+        converter.process_file(img)
 
-        with patch("emupipeline.steps.step_convert.Image") as mock_pil:
-            mock_pil.open.return_value = mock_img
-            # Cria um webp falso para simular sucesso
-            webp_path = img.with_suffix(".webp")
-
-            def fake_save(path, fmt, **kwargs):
-                Path(path).write_bytes(b"fake_webp_content" * 10)
-            mock_img.save.side_effect = fake_save
-
-            converter = WebPConverter(mode=ExecutionMode.NORMAL)
-            result = converter.process_file(img)
-
-        # Original deve continuar existindo
         assert img.exists(), "WebPConverter deletou o original — violação de responsabilidade única!"
 
     def test_missing_pillow_returns_error(self, config_factory, tmp_project):
@@ -84,13 +71,12 @@ class TestWebPConverter:
         img = tmp_project / "source" / "images" / "test.png"
         img.write_bytes(b"fake_png")
 
+        # Instancia o converter antes de suprimir PIL (para não afetar __init__)
+        converter = WebPConverter(mode=ExecutionMode.NORMAL)
+
+        # Suprime PIL apenas durante process_file — evita interferir com outros imports
         with patch.dict("sys.modules", {"PIL": None, "PIL.Image": None}):
-            with patch("builtins.__import__", side_effect=ImportError("No module named 'PIL'")):
-                converter = WebPConverter(mode=ExecutionMode.NORMAL)
-                # Forçar erro de import dentro de process_file
-                with patch("emupipeline.steps.step_convert.Image",
-                           side_effect=ImportError("PIL not found")):
-                    result = converter.process_file(img)
+            result = converter.process_file(img)
         assert result == "error"
 
 
