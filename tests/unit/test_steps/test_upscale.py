@@ -7,8 +7,8 @@ Foco em:
   - Dry-run → não chama subprocess
   - Sucesso: subprocess chamado com args corretos, stats["processed"] setado
   - CalledProcessError → stats["error"] = 1
-  - Pós-processamento ImageMagick: chamado por imagem, erros individuais logados
-  - magick ausente → post-processing ignorado
+  - Pós-processamento Pillow: UnsharpMask chamado por imagem, erros individuais logados
+  - Pillow ausente → post-processing ignorado com warning
 """
 
 from __future__ import annotations
@@ -257,108 +257,101 @@ class TestUpscalerError:
 
 
 # ---------------------------------------------------------------------------
-# Pós-processamento ImageMagick
+# Pós-processamento Pillow (UnsharpMask)
 # ---------------------------------------------------------------------------
 
-class TestImageMagickPostProcess:
+class TestPillowPostProcess:
     def _setup(self, config_factory, tmp_project, post_process: bool):
         img = tmp_project / "source" / "images" / "sf2.png"
         img.write_bytes(b"PNG")
         out_dir = tmp_project / "output" / "upscaled"
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "sf2.webp").write_bytes(b"webp_data_here")
-
         config_factory({
             "upscale": {"engine": "waifu2x", "scale": 2,
                         "output_format": "webp", "workers": 1, "post_process": post_process},
             "paths": {"bin_waifu2x": _REAL_BIN},
         })
 
-    @staticmethod
-    def _is_magick(cmd: list) -> bool:
-        """Identifica chamada ao ImageMagick pelo nome do binário (não pelo path completo)."""
-        return bool(cmd) and Path(str(cmd[0])).name == "magick"
-
-    def test_magick_called_when_installed_and_post_process_true(self, config_factory, tmp_project):
+    def test_unsharp_called_when_post_process_true(self, config_factory, tmp_project):
         self._setup(config_factory, tmp_project, post_process=True)
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        magick_calls: list = []
-
-        def fake_run(cmd, **kwargs):
-            if self._is_magick(cmd):
-                magick_calls.append(cmd)
-            return MagicMock(returncode=0)
-
-        with patch("shutil.which", return_value="/usr/bin/magick"):
-            with patch("emupipeline.steps.step_upscale.subprocess.run", side_effect=fake_run):
+        with patch.object(Upscaler, "_apply_unsharp_pillow") as mock_apply:
+            with patch("emupipeline.steps.step_upscale.subprocess.run",
+                       return_value=MagicMock(returncode=0)):
                 upscaler.run()
 
-        assert len(magick_calls) >= 1
+        mock_apply.assert_called_once()
 
-    def test_magick_not_called_when_post_process_false(self, config_factory, tmp_project):
+    def test_unsharp_not_called_when_post_process_false(self, config_factory, tmp_project):
         self._setup(config_factory, tmp_project, post_process=False)
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        magick_called = [False]
-
-        def fake_run(cmd, **kwargs):
-            if self._is_magick(cmd):
-                magick_called[0] = True
-            return MagicMock(returncode=0)
-
-        with patch("shutil.which", return_value="/usr/bin/magick"):
-            with patch("emupipeline.steps.step_upscale.subprocess.run", side_effect=fake_run):
-                upscaler.run()
-
-        assert not magick_called[0]
-
-    def test_magick_error_per_image_does_not_abort(self, config_factory, tmp_project):
-        import subprocess as _subprocess
-        self._setup(config_factory, tmp_project, post_process=True)
-        from emupipeline.steps.step_upscale import Upscaler
-        upscaler = Upscaler()
-
-        def fake_run(cmd, **kwargs):
-            if self._is_magick(cmd):
-                exc = _subprocess.CalledProcessError(1, "magick")
-                exc.stderr = b"magick error"
-                raise exc
-            return MagicMock(returncode=0)
-
-        with patch("shutil.which", return_value="/usr/bin/magick"):
-            with patch("emupipeline.steps.step_upscale.subprocess.run", side_effect=fake_run):
-                upscaler.run()  # não deve propagar o erro
-
-    def test_magick_skipped_when_not_installed(self, config_factory, tmp_project):
-        self._setup(config_factory, tmp_project, post_process=True)
-        from emupipeline.steps.step_upscale import Upscaler
-        upscaler = Upscaler()
-
-        magick_called = [False]
-
-        def fake_run(cmd, **kwargs):
-            if self._is_magick(cmd):
-                magick_called[0] = True
-            return MagicMock(returncode=0)
-
-        with patch("shutil.which", return_value=None):  # magick não instalado
-            with patch("emupipeline.steps.step_upscale.subprocess.run", side_effect=fake_run):
-                upscaler.run()
-
-        assert not magick_called[0], "magick não deve ser chamado quando não está instalado"
-
-    def test_post_processed_stat_set_after_success(self, config_factory, tmp_project):
-        self._setup(config_factory, tmp_project, post_process=True)
-        from emupipeline.steps.step_upscale import Upscaler
-        upscaler = Upscaler()
-
-        with patch("shutil.which", return_value="/usr/bin/magick"):
+        with patch.object(Upscaler, "_apply_unsharp_pillow") as mock_apply:
             with patch("emupipeline.steps.step_upscale.subprocess.run",
                        return_value=MagicMock(returncode=0)):
                 upscaler.run()
+
+        mock_apply.assert_not_called()
+
+    def test_pillow_open_error_does_not_abort(self, config_factory, tmp_project):
+        """_apply_unsharp_pillow trata OSError por imagem sem propagar."""
+        config_factory({
+            "upscale": {"engine": "waifu2x", "scale": 2, "output_format": "webp",
+                        "workers": 1, "post_process": True},
+            "paths": {"bin_waifu2x": _REAL_BIN},
+        })
+        out_dir = tmp_project / "output" / "upscaled"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "test.webp").write_bytes(b"data")
+
+        from emupipeline.steps.step_upscale import Upscaler
+        upscaler = Upscaler()
+
+        from PIL import Image as _PILImage
+        with patch.object(_PILImage, "open", side_effect=OSError("leitura falhou")):
+            upscaler._apply_unsharp_pillow(out_dir, "webp", "0x1.0+1.0+0.02")
+
+    def test_pillow_absent_skips_gracefully(self, config_factory, tmp_project):
+        """Quando PIL não está instalado, _apply_unsharp_pillow retorna sem crash."""
+        config_factory({
+            "upscale": {"engine": "waifu2x", "scale": 2, "output_format": "webp",
+                        "workers": 1, "post_process": True},
+            "paths": {"bin_waifu2x": _REAL_BIN},
+        })
+        out_dir = tmp_project / "output" / "upscaled"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        from emupipeline.steps.step_upscale import Upscaler
+        upscaler = Upscaler()
+
+        import sys
+        # Bloqueia PIL simulando ausência (sys.modules[key]=None → ImportError)
+        pil_backup = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "PIL" or k.startswith("PIL.")}
+        sys.modules["PIL"] = None  # type: ignore[assignment]
+        try:
+            upscaler._apply_unsharp_pillow(out_dir, "webp", "0x1.0+1.0+0.02")
+        finally:
+            del sys.modules["PIL"]
+            sys.modules.update(pil_backup)
+
+    def test_post_processed_stat_set_after_success(self, config_factory, tmp_project):
+        self._setup(config_factory, tmp_project, post_process=True)
+        out_dir = tmp_project / "output" / "upscaled"
+
+        # Cria imagem WebP real para PIL conseguir abrir
+        from PIL import Image as _PIL
+        _PIL.new("RGB", (2, 2), color="red").save(out_dir / "sf2.webp", "WEBP")
+
+        from emupipeline.steps.step_upscale import Upscaler
+        upscaler = Upscaler()
+
+        with patch("emupipeline.steps.step_upscale.subprocess.run",
+                   return_value=MagicMock(returncode=0)):
+            upscaler.run()
 
         assert "post_processed" in upscaler.get_stats()
 

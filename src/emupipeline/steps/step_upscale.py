@@ -1,9 +1,7 @@
-"""Step 7 — Upscaling com waifu2x / Real-ESRGAN + pós-processamento ImageMagick."""
+"""Step 7 — Upscaling com waifu2x / Real-ESRGAN + pós-processamento Pillow."""
 
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Optional
@@ -100,22 +98,44 @@ class Upscaler:
             self._stats["error"] = 1
             return
 
-        if post and shutil.which("magick"):
+        if post:
             unsharp = getattr(up_cfg, "unsharp", "0x1.0+1.0+0.02")
-            log.info("Aplicando pós-processamento ImageMagick…")
-            magick_errors = 0
-            for img in Path(str(out_dir)).rglob(f"*.{fmt}"):
-                try:
-                    subprocess.run(
-                        ["magick", str(img), "-unsharp", unsharp, str(img)],
-                        capture_output=True,
-                        check=True,
-                    )
-                except subprocess.CalledProcessError as exc:
-                    log.warning(
-                        f"ImageMagick falhou em {img.name}: "
-                        f"{exc.stderr.decode(errors='replace').strip()}"
-                    )
-                    magick_errors += 1
-            processed = self._stats.get("processed", 0)
-            self._stats["post_processed"] = max(0, processed - magick_errors)
+            self._apply_unsharp_pillow(Path(str(out_dir)), fmt, unsharp)
+
+    def _apply_unsharp_pillow(self, out_dir: Path, fmt: str, spec: str) -> None:
+        """Aplica unsharp mask via Pillow (elimina dependência do ImageMagick)."""
+        try:
+            from PIL import Image, ImageFilter
+        except ImportError:
+            log.warning("Pillow não instalado — pós-processamento ignorado. pip install emupipeline[images]")
+            return
+
+        # Converte spec ImageMagick "{r}x{sigma}+{amount}+{thresh}" → params Pillow
+        radius, percent, threshold = 2, 100, 5
+        try:
+            parts = spec.replace("x", "+").split("+")
+            if len(parts) >= 3:
+                sigma  = float(parts[1])
+                amount = float(parts[2])
+                thresh = float(parts[3]) if len(parts) > 3 else 0.02
+                radius    = max(1, round(sigma * 2))
+                percent   = round(amount * 100)
+                threshold = min(255, round(thresh * 255))
+        except (ValueError, IndexError):
+            pass
+
+        log.info("Aplicando pós-processamento (unsharp mask via Pillow)…")
+        errors = 0
+        for img_path in out_dir.rglob(f"*.{fmt}"):
+            try:
+                with Image.open(img_path) as img:
+                    sharpened = img.filter(ImageFilter.UnsharpMask(
+                        radius=radius, percent=percent, threshold=threshold,
+                    ))
+                    sharpened.save(img_path)
+            except Exception as exc:
+                log.warning(f"Unsharp falhou em {img_path.name}: {exc}")
+                errors += 1
+
+        processed = self._stats.get("processed", 0)
+        self._stats["post_processed"] = max(0, processed - errors)

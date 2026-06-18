@@ -35,10 +35,9 @@ dependencies = [
 
 [project.optional-dependencies]
 images     = ["Pillow>=10.0"]
-kpi        = ["pandas>=2.0", "openpyxl>=3.1"]
 validation = ["pydantic>=2.0"]
-tui        = ["textual>=0.50"]
-full       = ["emupipeline[images,kpi,validation,tui]"]
+tui        = ["textual>=0.50,<1.0"]
+full       = ["emupipeline[images,validation,tui]"]
 dev        = [
     "emupipeline[full]",
     "pytest>=8.0",

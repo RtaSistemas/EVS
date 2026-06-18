@@ -58,14 +58,6 @@ class EnvironmentChecker:
             "version_pattern": r"(\d+\.\d+)",
             "hint": "npm install -g igir   (requer Node.js >= 18)",
         },
-        {
-            "name": "magick",    # ImageMagick 7
-            "required": False,
-            "min_version": "7.0",
-            "version_cmd": ["magick", "-version"],
-            "version_pattern": r"Version: ImageMagick (\d+\.\d+)",
-            "hint": "sudo dnf install ImageMagick  # deve ser versão 7+",
-        },
     ]
 
     def __init__(self, cfg: object) -> None:
@@ -84,8 +76,6 @@ class EnvironmentChecker:
             # Pula ferramentas que não são necessárias para os steps selecionados
             if steps_to_run is not None:
                 if name == "igir" and "rom_manager" not in steps_to_run:
-                    continue
-                if name == "magick" and "upscale" not in steps_to_run:
                     continue
                 if name in ("ffmpeg", "ffprobe") and "optimize" not in steps_to_run:
                     continue
