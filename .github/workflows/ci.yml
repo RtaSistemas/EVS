@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    tags:
+      - "v*"          # v1.0.0, v2.3.1-beta, etc.
   pull_request:
     branches: [main]
 
@@ -115,10 +117,10 @@ jobs:
             -v --tb=short
 
   # ---------------------------------------------------------------------------
-  # Build do pacote (verifica que o wheel é válido)
+  # Build do pacote Python (wheel + sdist)
   # ---------------------------------------------------------------------------
   build:
-    name: Build Package
+    name: Build Package (wheel + sdist)
     runs-on: ubuntu-latest
     needs: [lint, test]
 
@@ -131,40 +133,187 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: pip install hatchling build
+        run: pip install hatchling build twine
 
       - name: Build wheel and sdist
         run: python -m build
 
-      - name: Check dist contents
-        run: |
-          pip install twine
-          twine check dist/*
+      - name: Validate dist with twine
+        run: twine check dist/*
 
-      - name: Upload artifacts
+      - name: Show dist contents
+        run: ls -lh dist/
+
+      - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-python
           path: dist/
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Release automático ao PyPI (apenas em tags v*)
+  # Build do executável standalone (PyInstaller — Linux x86_64)
+  # Incluído na release para usuários sem Python instalado (Steam Deck, etc.)
   # ---------------------------------------------------------------------------
-  release:
+  build-binary:
+    name: Build Standalone Binary (Linux x86_64)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + PyInstaller
+        run: |
+          pip install -e ".[full]"
+          pip install pyinstaller
+
+      - name: Build standalone binary
+        run: |
+          pyinstaller \
+            --onefile \
+            --name emupipeline \
+            --clean \
+            --strip \
+            --add-data "config.yaml.example:." \
+            src/emupipeline/cli.py
+
+      - name: Smoke-test the binary
+        run: |
+          ./dist/emupipeline --version
+          echo "Binary OK — version printed above"
+
+      - name: Compress binary
+        run: |
+          cd dist
+          tar -czf emupipeline-linux-x86_64.tar.gz emupipeline
+          sha256sum emupipeline-linux-x86_64.tar.gz > emupipeline-linux-x86_64.tar.gz.sha256
+          ls -lh
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-linux-x86_64
+          path: |
+            dist/emupipeline-linux-x86_64.tar.gz
+            dist/emupipeline-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # GitHub Release — cria release e anexa TODOS os artefatos
+  # Ativado apenas em tags v* (ex: git tag v5.1.0 && git push --tags)
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, build-binary, integration]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write   # obrigatório para criar releases e fazer upload de assets
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # histórico completo para gerar changelog
+
+      - name: Download Python dist (wheel + sdist)
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-python
+          path: release-assets/
+
+      - name: Download standalone binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux-x86_64
+          path: release-assets/
+
+      - name: List all release assets
+        run: |
+          echo "=== Assets que serão incluídos na release ==="
+          ls -lh release-assets/
+
+      - name: Generate checksums para todos os assets
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          echo "=== SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with all assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "EmuPipeline ${{ steps.version.outputs.tag }}"
+          generate_release_notes: true     # changelog automático via GitHub
+          fail_on_unmatched_files: true    # falha se algum arquivo não for encontrado
+          files: |
+            release-assets/*.whl
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+            release-assets/SHA256SUMS.txt
+          body: |
+            ## EmuPipeline ${{ steps.version.outputs.tag }}
+
+            ### Instalação
+
+            **Via pip (recomendado):**
+            ```bash
+            pip install emupipeline==${{ steps.version.outputs.tag }}
+            pip install emupipeline[tui]==${{ steps.version.outputs.tag }}   # com TUI
+            pip install emupipeline[full]==${{ steps.version.outputs.tag }}  # tudo
+            ```
+
+            **Executável standalone Linux (sem Python necessário):**
+            ```bash
+            # Baixe emupipeline-linux-x86_64.tar.gz
+            tar -xzf emupipeline-linux-x86_64.tar.gz
+            chmod +x emupipeline
+            ./emupipeline --version
+
+            # Verificar integridade
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            > Steam Deck: coloque o binário em `~/Applications/` e adicione ao Game Mode.
+
+            ### Assets incluídos
+            | Arquivo | Descrição |
+            |---|---|
+            | `*.whl` | Python wheel (pip install) |
+            | `*.tar.gz` (sdist) | Source distribution |
+            | `emupipeline-linux-x86_64.tar.gz` | Binário standalone Linux |
+            | `SHA256SUMS.txt` | Checksums de todos os arquivos |
+
+  # ---------------------------------------------------------------------------
+  # Publish to PyPI (apenas em tags v* — depois do GitHub Release)
+  # ---------------------------------------------------------------------------
+  release-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [build, integration]
+    needs: [github-release]
     if: startsWith(github.ref, 'refs/tags/v')
     environment: pypi
 
     permissions:
-      id-token: write  # OIDC para PyPI trusted publishing
+      id-token: write   # OIDC para PyPI trusted publishing
 
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-python
           path: dist/
 
       - name: Publish to PyPI
