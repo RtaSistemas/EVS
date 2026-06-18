@@ -92,3 +92,4 @@ class RomManager:
             self._stats["timeout"] = 1
         except FileNotFoundError:
             log.error("igir não encontrado. Instale: npm install -g igir")
+            self._stats["error"] = 1

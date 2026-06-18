@@ -82,6 +82,9 @@ class RomValidator:
 
         reports_dir = self._cfg.get("paths", "output_reports")
         if reports_dir:
+            if self._mode != ExecutionMode.NORMAL:
+                log.info(f"[{self._mode.name}] Relatório de validação não gravado em disco.")
+                return
             Path(reports_dir).mkdir(parents=True, exist_ok=True)
             report = Path(reports_dir) / "validation_report.txt"
             lines = [

@@ -13,6 +13,7 @@ Foco em:
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
@@ -63,8 +64,9 @@ class TestSmartSkip:
 
         video = tmp_path / "game.avi"
         video.write_bytes(b"X" * 100)
+        dummy_out = tmp_path / ".tmp_game.mp4"
+        dummy_out.write_bytes(b"X" * 100)
 
-        # Mocka o Popen para evitar execução real do ffmpeg
         with patch("emupipeline.steps.step_optimize.subprocess.Popen") as mock_popen:
             mock_proc = MagicMock()
             mock_proc.communicate.return_value = (b"", b"")
@@ -72,10 +74,9 @@ class TestSmartSkip:
             mock_proc.pid = 9999
             mock_popen.return_value = mock_proc
 
-            with patch("pathlib.Path.stat") as mock_stat:
-                mock_stat.return_value = MagicMock(st_size=50_000)
-                with patch("pathlib.Path.replace"):
-                    optimizer.process_file(video)
+            with patch("emupipeline.steps.step_optimize.atomic_write",
+                       side_effect=lambda p: nullcontext(dummy_out)):
+                optimizer.process_file(video)
 
         assert mock_popen.called, "ffmpeg deve ser chamado para arquivo não-hevc"
 
@@ -87,6 +88,8 @@ class TestSmartSkip:
 
         video = tmp_path / "game.mp4"
         video.write_bytes(b"X" * 100)
+        dummy_out = tmp_path / ".tmp_game_out.mp4"
+        dummy_out.write_bytes(b"X" * 100)
 
         with patch("emupipeline.steps.step_optimize.subprocess.Popen") as mock_popen:
             mock_proc = MagicMock()
@@ -94,10 +97,10 @@ class TestSmartSkip:
             mock_proc.returncode = 0
             mock_proc.pid = 9999
             mock_popen.return_value = mock_proc
-            with patch("pathlib.Path.stat") as mock_stat:
-                mock_stat.return_value = MagicMock(st_size=50_000)
-                with patch("pathlib.Path.replace"):
-                    optimizer.process_file(video)
+
+            with patch("emupipeline.steps.step_optimize.atomic_write",
+                       side_effect=lambda p: nullcontext(dummy_out)):
+                optimizer.process_file(video)
 
         assert mock_popen.called
 

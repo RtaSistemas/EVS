@@ -104,7 +104,6 @@ class ImageOrganizer(BaseProcessor):
         else:
             dest_dir = out_dir
 
-        dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"{rom_name}{file_path.suffix.lower()}"
 
         if dest.exists() and not self._overwrite:
@@ -123,6 +122,8 @@ class ImageOrganizer(BaseProcessor):
             self.logger.debug(f"[DRY] {match_type}: {file_path.name} → {dest.name}")
             return "dry_run"
 
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
         try:
             if dest.exists():
                 dest.unlink()
@@ -139,7 +140,7 @@ class ImageOrganizer(BaseProcessor):
             return "error"
 
     def _save_unmatched_report(self) -> None:
-        if not self._unmatched:
+        if not self._unmatched or self._mode != ExecutionMode.NORMAL:
             return
         reports_dir = self.config.get("paths", "output_reports")
         if reports_dir:

@@ -102,8 +102,10 @@ class DatSplitter:
                 self._inc("clone_excluded")
                 continue
 
-            if is_bios and gen_bios:
-                bios_list.append(machine)
+            if is_bios:
+                if gen_bios:
+                    bios_list.append(machine)
+                self._inc("bios_excluded")
                 continue
 
             driver = resolve_driver(machine.get("sourcefile", ""))
@@ -111,6 +113,18 @@ class DatSplitter:
             kept += 1
 
         log.info(f"Total: {total} | Mantidos: {kept} | Excluídos: {total - kept}")
+
+        if self._mode == ExecutionMode.AUDIT:
+            records = groups.items() if split else [("combined", [m for ms in groups.values() for m in ms])]
+            for driver, machines in records:
+                fname = f"{driver}.dat" if split else combined_name
+                if self._audit:
+                    self._audit.record(
+                        step="dat_split", action="create_dat",
+                        source=str(dat_path), dest=str(Path(out_dir) / fname),
+                        reason=f"{len(machines)} jogos",
+                    )
+            return
 
         if self._mode == ExecutionMode.DRY_RUN:
             log.info(f"[DRY] Geraria {len(groups)} DATs em {out_dir}")

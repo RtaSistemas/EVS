@@ -62,11 +62,19 @@ class VideoOptimizer(BaseProcessor):
         )
         self._target_codecs = _CODEC_NAMES.get(self.codec, set())
 
-        # Controle de oversubscription:
-        # Python usa metade dos workers; ffmpeg usa a outra metade
         global_threads = self.config.get("global", "threads", 4)
-        self._python_workers = max(1, global_threads // 2)
+        self._python_workers = self._python_workers_formula(global_threads)
         self._ffmpeg_threads = str(max(1, global_threads // self._python_workers))
+
+    @property
+    def _target_codec_names(self) -> set[str]:
+        """Nomes de codec que ffprobe retorna para o codec alvo configurado."""
+        return self._target_codecs
+
+    @staticmethod
+    def _python_workers_formula(global_threads: int) -> int:
+        """Metade dos workers para Python; outra metade fica livre para ffmpeg."""
+        return max(1, global_threads // 2)
 
     def run(self, **kwargs: Any) -> None:
         videos_dir = self.config.get("paths", "videos_dir")
@@ -77,18 +85,12 @@ class VideoOptimizer(BaseProcessor):
         self.run_parallel(files, threads=self._python_workers)
 
     def process_file(self, file_path: Path) -> str:
-        # Smart-skip: verifica codec atual via ffprobe
-        if self.smart_skip:
-            current = self._probe_codec(file_path)
-            if current and current.lower() in self._target_codecs:
-                return "skipped_codec"
-
         final_out = file_path.with_suffix(".mp4")
 
         if self._mode == ExecutionMode.AUDIT:
             assert self._audit is not None
             self._audit.record(
-                step=self.name, action="reencode",
+                step=self.name, action="optimize_video",
                 source=str(file_path), dest=str(final_out),
                 reason=f"→ {self.codec} crf={self.crf}",
                 would_delete=self.delete_original and file_path != final_out,
@@ -98,6 +100,12 @@ class VideoOptimizer(BaseProcessor):
         if self._mode == ExecutionMode.DRY_RUN:
             self.logger.debug(f"[DRY] Reencodaria: {file_path.name}")
             return "dry_run"
+
+        # Smart-skip: verifica codec atual via ffprobe (apenas em modo NORMAL)
+        if self.smart_skip:
+            current = self._probe_codec(file_path)
+            if current and current.lower() in self._target_codecs:
+                return "skipped_codec"
 
         try:
             with atomic_write(final_out) as tmp:

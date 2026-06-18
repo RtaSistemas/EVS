@@ -131,9 +131,25 @@ class EnvironmentChecker:
         def parse(s: str) -> tuple[int, ...]:
             return tuple(int(x) for x in s.split(".")[:3] if x.isdigit())
         try:
-            return parse(v) >= parse(minimum)
+            parsed = parse(v)
+            if not parsed:  # string não reconhecida → assume compatível
+                return True
+            return parsed >= parse(minimum)
         except (ValueError, TypeError):
             return True
+
+    def _check_path_binary(self, label: str, path: "str | Path | None") -> None:
+        """Verifica binário em caminho absoluto e adiciona resultado a _results.
+
+        Quando path=None (não configurado), ignora silenciosamente.
+        """
+        if path is None:
+            return
+        exists = Path(str(path)).exists()
+        self._results.append(DepStatus(
+            name=label, required=False, found=exists,
+            hint="" if exists else f"Configure paths.{label.replace('-', '_')} no config.yaml",
+        ))
 
     def report(self) -> str:
         lines = ["\n🔍 VERIFICAÇÃO DE AMBIENTE\n"]

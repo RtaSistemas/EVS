@@ -46,6 +46,7 @@ class KpiReporter:
     ) -> None:
         from emupipeline.core.config import cfg
         self._cfg   = cfg
+        self._mode  = mode
         self._stats: dict[str, int] = {}
 
     def get_stats(self) -> dict[str, int]:
@@ -77,6 +78,9 @@ class KpiReporter:
         # Salva CSV usando módulo csv para quoting correto
         reports_dir = self._cfg.get("paths", "output_reports")
         if reports_dir:
+            if self._mode != ExecutionMode.NORMAL:
+                log.info(f"[{self._mode.name}] KPI CSV não gravado em disco.")
+                return
             Path(str(reports_dir)).mkdir(parents=True, exist_ok=True)
             csv_path = Path(str(reports_dir)) / "kpi.csv"
             buf = io.StringIO()
