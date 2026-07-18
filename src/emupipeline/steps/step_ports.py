@@ -1,4 +1,6 @@
-"""Step 11 — Geração de launchers .desktop para Ports."""
+"""Step 11 — Geração de launchers .desktop para Ports.
+Herda BaseProcessor (arquitetura consistente).
+"""
 
 from __future__ import annotations
 
@@ -6,11 +8,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.logger import setup_logger
+from emupipeline.core.processor import BaseProcessor
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
-
-log = setup_logger("PortsAutomator")
 
 _AUTORUN_LINUX = """\
 #!/bin/bash
@@ -37,7 +37,7 @@ Categories=Game;
 
 
 @register
-class PortsAutomator:
+class PortsAutomator(BaseProcessor):
     meta = StepMeta(
         id="ports_launchers",
         menu_number=11,
@@ -47,24 +47,18 @@ class PortsAutomator:
         pipeline_order=999,
     )
 
-    name = "PortsAutomator"
-
     def __init__(
         self,
         mode: ExecutionMode = ExecutionMode.NORMAL,
         audit: Optional[AuditReport] = None,
     ) -> None:
-        from emupipeline.core.config import cfg
-        self._cfg   = cfg
-        self._mode  = mode
-        self._audit = audit
-        self._stats: dict[str, int] = {}
+        super().__init__("PortsAutomator", mode=mode, audit=audit)
 
-    def get_stats(self) -> dict[str, int]:
-        return dict(self._stats)
+    def process_file(self, file_path: Path) -> str:
+        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
-        ports_cfg   = self._cfg.get("ports")
+        ports_cfg   = self.config.get("ports")
         src_dir     = Path(str(getattr(ports_cfg, "source_dir",  "~/Emulation/ports"))).expanduser()
         out_dir     = Path(str(getattr(ports_cfg, "output_dir",  "~/Emulation/tools/ports_launchers"))).expanduser()
         runner      = str(getattr(ports_cfg, "windows_runner", "wine"))
@@ -77,10 +71,10 @@ class PortsAutomator:
         extra_env_lines = "\n".join(f'export {k}="{v}"' for k, v in win_env.items())
 
         if not src_dir.exists():
-            log.error(f"Diretório de ports não encontrado: {src_dir}")
+            self.logger.error(f"Diretório de ports não encontrado: {src_dir}")
             return
 
-        if self._mode != ExecutionMode.DRY_RUN:
+        if self._mode == ExecutionMode.NORMAL:
             out_dir.mkdir(parents=True, exist_ok=True)
 
         for port_dir in sorted(src_dir.iterdir()):
@@ -89,8 +83,8 @@ class PortsAutomator:
 
             executable = self._find_executable(port_dir, win_exts)
             if not executable:
-                log.warning(f"Sem executável em: {port_dir.name}")
-                self._stats["skipped_no_exec"] = self._stats.get("skipped_no_exec", 0) + 1
+                self.logger.warning(f"Sem executável em: {port_dir.name}")
+                self.update_stat("skipped_no_exec")
                 continue
 
             is_windows   = executable.suffix.lower() in win_exts
@@ -99,18 +93,21 @@ class PortsAutomator:
             desktop_path = out_dir / f"{port_dir.name}.desktop"
 
             if self._mode == ExecutionMode.AUDIT:
-                assert self._audit is not None
+                if self._audit is None:
+                    self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                    self.update_stat("error")
+                    continue
                 self._audit.record(
                     step=self.name, action="create_launcher",
                     source=str(port_dir), dest=str(desktop_path),
                     reason=f"{'Wine' if is_windows else 'Linux'} port",
                 )
-                self._stats["audit_recorded"] = self._stats.get("audit_recorded", 0) + 1
+                self.update_stat("audit_recorded")
                 continue
 
             if self._mode == ExecutionMode.DRY_RUN:
-                log.info(f"[DRY] Criaria launcher para: {port_name}")
-                self._stats["dry_run"] = self._stats.get("dry_run", 0) + 1
+                self.logger.info(f"[DRY] Criaria launcher para: {port_name}")
+                self.update_stat("dry_run")
                 continue
 
             try:
@@ -140,14 +137,14 @@ class PortsAutomator:
                 desktop_content = _DESKTOP.format(name=port_name, autorun=autorun_path)
                 desktop_path.write_text(desktop_content, encoding="utf-8")
 
-                self._stats["created"] = self._stats.get("created", 0) + 1
-                log.debug(f"Launcher criado: {port_name}")
+                self.update_stat("created")
+                self.logger.debug(f"Launcher criado: {port_name}")
             except OSError as exc:
-                log.error(f"Erro ao criar launcher para '{port_dir.name}': {exc}")
-                self._stats["error"] = self._stats.get("error", 0) + 1
+                self.logger.error(f"Erro ao criar launcher para '{port_dir.name}': {exc}")
+                self.update_stat("error")
 
-        total = self._stats.get("created", 0)
-        log.info(f"Launchers criados: {total}")
+        total = self.get_stats().get("created", 0)
+        self.logger.info(f"Launchers criados: {total}")
 
     @staticmethod
     def _find_executable(port_dir: Path, win_exts: set[str]) -> Optional[Path]:

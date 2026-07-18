@@ -101,6 +101,11 @@ class BaseProcessor(ABC):
         with self._stats_lock:
             return dict(self._stats)
 
+    @property
+    def last_metrics(self) -> Optional[StepMetrics]:
+        """Métricas da última execução de run_parallel()."""
+        return self._metrics
+
     # ------------------------------------------------------------------
     # Varredura de diretório
     # ------------------------------------------------------------------
@@ -164,9 +169,7 @@ class BaseProcessor(ABC):
                 done += 1
                 if done % max(1, total // 20) == 0:
                     pct = done / total * 100
-                    print(f"\r  {self.name}: {done}/{total} ({pct:.0f}%)", end="", flush=True)
-
-        print()  # quebra linha do progresso
+                    self.logger.debug(f"{self.name}: {done}/{total} ({pct:.0f}%)")
         elapsed = time.monotonic() - start
 
         # Finaliza métricas

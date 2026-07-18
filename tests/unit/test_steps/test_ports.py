@@ -69,15 +69,15 @@ def _make_windows_port(ports_dir: Path, name: str = "WinGame") -> Path:
 # ---------------------------------------------------------------------------
 
 class TestName:
-    def test_class_attribute_name(self):
-        from emupipeline.steps.step_ports import PortsAutomator
-        assert PortsAutomator.name == "PortsAutomator"
-
     def test_instance_attribute_name(self, config_factory):
         config_factory()
         from emupipeline.steps.step_ports import PortsAutomator
         inst = PortsAutomator()
         assert inst.name == "PortsAutomator"
+
+    def test_meta_id(self):
+        from emupipeline.steps.step_ports import PortsAutomator
+        assert PortsAutomator.meta.id == "ports_launchers"
 
 
 # ---------------------------------------------------------------------------

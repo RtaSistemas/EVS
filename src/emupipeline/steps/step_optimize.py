@@ -88,7 +88,9 @@ class VideoOptimizer(BaseProcessor):
         final_out = file_path.with_suffix(".mp4")
 
         if self._mode == ExecutionMode.AUDIT:
-            assert self._audit is not None
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return "error"
             self._audit.record(
                 step=self.name, action="optimize_video",
                 source=str(file_path), dest=str(final_out),

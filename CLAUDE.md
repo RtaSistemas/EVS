@@ -77,11 +77,44 @@ def test_exemplo(config_factory, tmp_project, sample_dat):
 
 ## Padrões obrigatórios por step
 
+### Herdar BaseProcessor — todos os steps devem seguir este padrão
+
+```python
+from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.registry import register
+from emupipeline.core.step_interface import StepMeta
+
+@register
+class MeuStep(BaseProcessor):
+    meta = StepMeta(
+        id="meu_step",
+        menu_number=12,
+        label="Meu Step",
+        group="Grupo",
+        pipeline_order=120,
+    )
+
+    def __init__(
+        self,
+        mode: ExecutionMode = ExecutionMode.NORMAL,
+        audit: Optional[AuditReport] = None,
+    ) -> None:
+        super().__init__("MeuStep", mode=mode, audit=audit)
+        # self.config, self.logger, self._mode, self._audit, self.name disponíveis
+
+    def process_file(self, file_path: Path) -> str:
+        # Stub obrigatório quando o step não usa scan()+run_parallel()
+        return "not_applicable"
+```
+
 ### ExecutionMode — verificar ANTES de qualquer I/O
 
 ```python
 def process_file(self, file_path: Path) -> str:
     if self._mode == ExecutionMode.AUDIT:
+        if self._audit is None:
+            self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            return "error"
         self._audit.record(step=self.name, action="minha_acao", source=str(file_path))
         return "audit_recorded"
     if self._mode == ExecutionMode.DRY_RUN:
@@ -90,6 +123,31 @@ def process_file(self, file_path: Path) -> str:
     # NORMAL: I/O acontece aqui
     dest_dir.mkdir(parents=True, exist_ok=True)  # mkdir DEPOIS dos guards de modo
     ...
+```
+
+### Contagem de estatísticas — usar update_stat(), não _stats diretamente
+
+```python
+# ✅ Correto: thread-safe via update_stat()
+self.update_stat("processed")        # incrementa em 1
+self.update_stat("processed", 10)    # incrementa em 10
+stats = self.get_stats()             # retorna cópia do dict
+
+# ❌ Nunca: acesso direto não é thread-safe em run_parallel()
+self._stats["processed"] = 1        # pode causar race condition
+```
+
+### MetricsCollector — integração no cli.py
+
+```python
+from emupipeline.core.metrics import MetricsCollector
+
+collector = MetricsCollector()
+# após cada step.run():
+if hasattr(step, "last_metrics") and step.last_metrics is not None:
+    collector.register(step.last_metrics)
+# ao final do pipeline:
+collector.export_json(Path(reports_dir) / "metrics.json")
 ```
 
 ### Escrita atômica

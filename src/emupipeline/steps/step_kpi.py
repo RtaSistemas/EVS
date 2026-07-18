@@ -1,4 +1,6 @@
-"""Step 10 — Relatório KPI de uso de disco e contagem de arquivos."""
+"""Step 10 — Relatório KPI de uso de disco e contagem de arquivos.
+Herda BaseProcessor (arquitetura consistente).
+"""
 
 from __future__ import annotations
 
@@ -8,11 +10,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.logger import setup_logger
+from emupipeline.core.processor import BaseProcessor
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
-
-log = setup_logger("KpiReporter")
 
 
 def _dir_stats(path: Path) -> tuple[int, int]:
@@ -29,7 +29,7 @@ def _dir_stats(path: Path) -> tuple[int, int]:
 
 
 @register
-class KpiReporter:
+class KpiReporter(BaseProcessor):
     meta = StepMeta(
         id="kpi_report",
         menu_number=10,
@@ -44,21 +44,18 @@ class KpiReporter:
         mode: ExecutionMode = ExecutionMode.NORMAL,
         audit: Optional[AuditReport] = None,
     ) -> None:
-        from emupipeline.core.config import cfg
-        self._cfg   = cfg
-        self._mode  = mode
-        self._stats: dict[str, int] = {}
+        super().__init__("KpiReporter", mode=mode, audit=audit)
 
-    def get_stats(self) -> dict[str, int]:
-        return dict(self._stats)
+    def process_file(self, file_path: Path) -> str:
+        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
         targets = {
-            "ROMs (entrada)":    self._cfg.get("paths", "input_roms"),
-            "ROMs (saída)":      self._cfg.get("paths", "output_roms"),
-            "Imagens (entrada)": self._cfg.get("paths", "input_imgs"),
-            "Imagens (saída)":   self._cfg.get("paths", "output_imgs"),
-            "Vídeos":            self._cfg.get("paths", "videos_dir"),
+            "ROMs (entrada)":    self.config.get("paths", "input_roms"),
+            "ROMs (saída)":      self.config.get("paths", "output_roms"),
+            "Imagens (entrada)": self.config.get("paths", "input_imgs"),
+            "Imagens (saída)":   self.config.get("paths", "output_imgs"),
+            "Vídeos":            self.config.get("paths", "videos_dir"),
         }
 
         rows: list[tuple[str, int, float]] = []
@@ -67,20 +64,30 @@ class KpiReporter:
                 count, size = _dir_stats(Path(str(path)))
                 rows.append((label, count, size / 1024 / 1024))
 
-        # Exibe tabela
-        print(f"\n{'─'*55}")
-        print(f"  {'Local':<28} {'Arquivos':>9}  {'Tamanho (MB)':>12}")
-        print(f"{'─'*55}")
-        for label, count, mb in rows:
-            print(f"  {label:<28} {count:>9}  {mb:>12.1f}")
-        print(f"{'─'*55}\n")
+        if self._mode == ExecutionMode.AUDIT:
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return
+            for label, path in targets.items():
+                if path and Path(str(path)).exists():
+                    count, size = _dir_stats(Path(str(path)))
+                    self._audit.record(
+                        step=self.name, action="analyze_dir",
+                        source=str(path),
+                        reason=f"{label}: {count} arqs, {size / 1024 / 1024:.1f}MB",
+                    )
+            return
+
+        if self._mode == ExecutionMode.DRY_RUN:
+            self.logger.info(f"[DRY] Analisaria {len(rows)} diretórios.")
+            return
+
+        # NORMAL: exibe tabela via logger
+        self._log_table(rows)
 
         # Salva CSV usando módulo csv para quoting correto
-        reports_dir = self._cfg.get("paths", "output_reports")
+        reports_dir = self.config.get("paths", "output_reports")
         if reports_dir:
-            if self._mode != ExecutionMode.NORMAL:
-                log.info(f"[{self._mode.name}] KPI CSV não gravado em disco.")
-                return
             Path(str(reports_dir)).mkdir(parents=True, exist_ok=True)
             csv_path = Path(str(reports_dir)) / "kpi.csv"
             buf = io.StringIO()
@@ -89,6 +96,19 @@ class KpiReporter:
             for label, count, mb in rows:
                 writer.writerow([label, count, f"{mb:.2f}"])
             csv_path.write_text(buf.getvalue(), encoding="utf-8")
-            log.info(f"KPI salvo em: {csv_path}")
+            self.logger.info(f"KPI salvo em: {csv_path}")
 
         self._stats["directories_analyzed"] = len(rows)
+
+    def _log_table(self, rows: list[tuple[str, int, float]]) -> None:
+        sep = "─" * 55
+        lines = [
+            "",
+            sep,
+            f"  {'Local':<28} {'Arquivos':>9}  {'Tamanho (MB)':>12}",
+            sep,
+        ]
+        for label, count, mb in rows:
+            lines.append(f"  {label:<28} {count:>9}  {mb:>12.1f}")
+        lines.append(sep)
+        self.logger.info("\n".join(lines))

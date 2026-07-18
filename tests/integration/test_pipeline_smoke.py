@@ -76,8 +76,8 @@ class TestDatSplitterIntegration:
         from emupipeline.core.dat_manager import DatMaster
         from emupipeline.steps.step_dat_split import DatSplitter
 
-        dat = DatMaster(sample_dat)
-        splitter = DatSplitter(dat)
+        DatMaster(sample_dat)  # parsed to verify it loads; DatSplitter reads from config
+        splitter = DatSplitter()
         splitter.run()
 
         out_dir = full_project / "output" / "dats"
@@ -98,8 +98,8 @@ class TestDatSplitterIntegration:
         from emupipeline.core.dat_manager import DatMaster
         from emupipeline.steps.step_dat_split import DatSplitter
 
-        dat = DatMaster(sample_dat)
-        DatSplitter(dat).run()
+        DatMaster(sample_dat)
+        DatSplitter().run()
 
         out_dir = full_project / "output" / "dats"
         all_content = " ".join(f.read_text(errors="replace") for f in out_dir.glob("*.dat"))
@@ -118,8 +118,8 @@ class TestDatSplitterIntegration:
         from emupipeline.core.dat_manager import DatMaster
         from emupipeline.steps.step_dat_split import DatSplitter
 
-        dat = DatMaster(sample_dat)
-        DatSplitter(dat).run()
+        DatMaster(sample_dat)
+        DatSplitter().run()
 
         out_dir = full_project / "output" / "dats"
         all_content = " ".join(f.read_text(errors="replace") for f in out_dir.glob("*.dat"))

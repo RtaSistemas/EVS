@@ -65,7 +65,8 @@ class ImageOrganizer(BaseProcessor):
             self.logger.error(f"Diretório de imagens não encontrado: {src_dir}")
             return
 
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        if self._mode == ExecutionMode.NORMAL:
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
         files = self.scan(Path(src_dir), extensions=self._valid_exts)
         self._out_dir = Path(out_dir)
         self.run_parallel(files)

@@ -71,6 +71,10 @@ class MetricsCollector:
         self._steps.append(m)
         return m
 
+    def register(self, metrics: StepMetrics) -> None:
+        """Registra métricas já calculadas de um step (e.g. via BaseProcessor.last_metrics)."""
+        self._steps.append(metrics)
+
     def export_json(self, output_path: Path) -> None:
         report = {
             "run_id":             self.run_id,

@@ -1,4 +1,6 @@
-"""Step 7 — Upscaling com waifu2x / Real-ESRGAN + pós-processamento Pillow."""
+"""Step 7 — Upscaling com waifu2x / Real-ESRGAN + pós-processamento Pillow.
+Herda BaseProcessor (arquitetura consistente).
+"""
 
 from __future__ import annotations
 
@@ -7,15 +9,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.logger import setup_logger
+from emupipeline.core.processor import BaseProcessor
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
-log = setup_logger("Upscaler")
-
 
 @register
-class Upscaler:
+class Upscaler(BaseProcessor):
     meta = StepMeta(
         id="upscale_images",
         menu_number=7,
@@ -30,45 +30,40 @@ class Upscaler:
         mode: ExecutionMode = ExecutionMode.NORMAL,
         audit: Optional[AuditReport] = None,
     ) -> None:
-        from emupipeline.core.config import cfg
-        self._cfg   = cfg
-        self._mode  = mode
-        self._stats: dict[str, int] = {}
+        super().__init__("Upscaler", mode=mode, audit=audit)
 
-    def get_stats(self) -> dict[str, int]:
-        return dict(self._stats)
+    def process_file(self, file_path: Path) -> str:
+        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
-        up_cfg = self._cfg.get("upscale")
+        up_cfg = self.config.get("upscale")
         engine = getattr(up_cfg, "engine", None)
 
         if not engine:
-            log.error(
+            self.logger.error(
                 "upscale.engine não configurado. "
                 "Defina 'waifu2x' ou 'realesrgan' em config.yaml → upscale.engine"
             )
             return
 
         bin_attr = "bin_waifu2x" if engine == "waifu2x" else "bin_realesrgan"
-        bin_path = self._cfg.get("paths", bin_attr)
+        bin_path = self.config.get("paths", bin_attr)
 
         if not bin_path or not Path(str(bin_path)).exists():
-            log.error(f"Binário '{engine}' não encontrado: {bin_path}")
-            log.error(f"Configure paths.{bin_attr} no config.yaml")
+            self.logger.error(f"Binário '{engine}' não encontrado: {bin_path}")
+            self.logger.error(f"Configure paths.{bin_attr} no config.yaml")
             return
 
-        src_dir = self._cfg.get("paths", "upscale_input")
-        out_dir = self._cfg.get("paths", "upscale_output")
+        src_dir = self.config.get("paths", "upscale_input")
+        out_dir = self.config.get("paths", "upscale_output")
         scale   = getattr(up_cfg, "scale",         2)
         workers = getattr(up_cfg, "workers",        2)
         fmt     = getattr(up_cfg, "output_format", "webp")
         post    = getattr(up_cfg, "post_process",  True)
 
         if not src_dir or not Path(str(src_dir)).exists():
-            log.error(f"Diretório de entrada não encontrado: {src_dir}")
+            self.logger.error(f"Diretório de entrada não encontrado: {src_dir}")
             return
-
-        Path(str(out_dir)).mkdir(parents=True, exist_ok=True)
 
         images = [
             p for p in Path(str(src_dir)).rglob("*")
@@ -77,14 +72,30 @@ class Upscaler:
         ]
 
         if not images:
-            log.info("Nenhuma imagem encontrada para upscaling.")
+            self.logger.info("Nenhuma imagem encontrada para upscaling.")
+            return
+
+        if self._mode == ExecutionMode.AUDIT:
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return
+            for img in images:
+                self._audit.record(
+                    step=self.name, action=f"upscale_{engine}",
+                    source=str(img),
+                    dest=str(Path(str(out_dir)) / img.name),
+                    reason=f"x{scale} → {fmt}",
+                )
             return
 
         if self._mode == ExecutionMode.DRY_RUN:
-            log.info(f"[DRY] Processaria {len(images)} imagens com {engine} x{scale}")
+            self.logger.info(f"[DRY] Processaria {len(images)} imagens com {engine} x{scale}")
             return
 
-        log.info(f"Upscaling {len(images)} imagens com {engine} x{scale}…")
+        # NORMAL: cria diretório de saída e executa upscaler
+        Path(str(out_dir)).mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Upscaling {len(images)} imagens com {engine} x{scale}…")
         cmd = [
             str(bin_path), "-i", str(src_dir), "-o", str(out_dir),
             "-s", str(scale), "-f", fmt, "-j", f"1:{workers}:1",
@@ -92,10 +103,10 @@ class Upscaler:
 
         try:
             subprocess.run(cmd, timeout=21600, check=True)
-            self._stats["processed"] = len(images)
+            self.update_stat("processed", len(images))
         except subprocess.CalledProcessError as exc:
-            log.error(f"Upscaler falhou: {exc}")
-            self._stats["error"] = 1
+            self.logger.error(f"Upscaler falhou: {exc}")
+            self.update_stat("error")
             return
 
         if post:
@@ -107,7 +118,7 @@ class Upscaler:
         try:
             from PIL import Image, ImageFilter
         except ImportError:
-            log.warning("Pillow não instalado — pós-processamento ignorado. pip install emupipeline[images]")
+            self.logger.warning("Pillow não instalado — pós-processamento ignorado. pip install emupipeline[images]")
             return
 
         # Converte spec ImageMagick "{r}x{sigma}+{amount}+{thresh}" → params Pillow
@@ -124,7 +135,7 @@ class Upscaler:
         except (ValueError, IndexError):
             pass
 
-        log.info("Aplicando pós-processamento (unsharp mask via Pillow)…")
+        self.logger.info("Aplicando pós-processamento (unsharp mask via Pillow)…")
         errors = 0
         for img_path in out_dir.rglob(f"*.{fmt}"):
             try:
@@ -134,8 +145,8 @@ class Upscaler:
                     ))
                     sharpened.save(img_path)
             except Exception as exc:
-                log.warning(f"Unsharp falhou em {img_path.name}: {exc}")
+                self.logger.warning(f"Unsharp falhou em {img_path.name}: {exc}")
                 errors += 1
 
-        processed = self._stats.get("processed", 0)
-        self._stats["post_processed"] = max(0, processed - errors)
+        processed = self.get_stats().get("processed", 0)
+        self.update_stat("post_processed", max(0, processed - errors))

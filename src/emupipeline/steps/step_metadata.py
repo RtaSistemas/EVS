@@ -1,4 +1,6 @@
-"""Step 9 — Geração de gamelist.xml para EmulationStation."""
+"""Step 9 — Geração de gamelist.xml para EmulationStation.
+Herda BaseProcessor (arquitetura consistente).
+"""
 
 from __future__ import annotations
 
@@ -8,15 +10,13 @@ from typing import Any, Optional
 
 from emupipeline.core.dat_manager import DatMaster
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.logger import setup_logger
+from emupipeline.core.processor import BaseProcessor
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
-log = setup_logger("MetadataGenerator")
-
 
 @register
-class MetadataGenerator:
+class MetadataGenerator(BaseProcessor):
     meta = StepMeta(
         id="generate_metadata",
         menu_number=9,
@@ -33,25 +33,22 @@ class MetadataGenerator:
         mode: ExecutionMode = ExecutionMode.NORMAL,
         audit: Optional[AuditReport] = None,
     ) -> None:
-        from emupipeline.core.config import cfg
-        self._cfg   = cfg
-        self._dat   = dat
-        self._mode  = mode
-        self._stats: dict[str, int] = {}
+        super().__init__("MetadataGenerator", mode=mode, audit=audit)
+        self._dat = dat
 
-    def get_stats(self) -> dict[str, int]:
-        return dict(self._stats)
+    def process_file(self, file_path: Path) -> str:
+        return "not_applicable"
 
     def run(self, dat: Optional[DatMaster] = None, **kwargs: Any) -> None:
         self._dat = dat or self._dat
         if self._dat is None:
-            log.error("DatMaster não fornecido.")
+            self.logger.error("DatMaster não fornecido.")
             return
 
-        roms_dir   = Path(str(self._cfg.get("paths", "output_roms")))
-        imgs_dir   = Path(str(self._cfg.get("paths", "output_imgs")))
-        xml_out    = Path(str(self._cfg.get("paths", "output_xml")))
-        catver_raw = self._cfg.get("paths", "catver_ini")
+        roms_dir   = Path(str(self.config.get("paths", "output_roms")))
+        imgs_dir   = Path(str(self.config.get("paths", "output_imgs")))
+        xml_out    = Path(str(self.config.get("paths", "output_xml")))
+        catver_raw = self.config.get("paths", "catver_ini")
         catver     = Path(str(catver_raw)) if catver_raw else None
 
         # Carrega catver.ini se disponível
@@ -85,16 +82,28 @@ class MetadataGenerator:
                 ET.SubElement(game_el, "image").text = f"./{img_path.relative_to(xml_out.parent)}"
             count += 1
 
-        if self._mode == ExecutionMode.DRY_RUN:
-            log.info(f"[DRY] Geraria gamelist.xml com {count} entradas em {xml_out}")
+        if self._mode == ExecutionMode.AUDIT:
+            if self._audit is None:
+                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+                return
+            self._audit.record(
+                step=self.name, action="create_gamelist_xml",
+                source=str(roms_dir), dest=str(xml_out),
+                reason=f"{count} jogos",
+            )
             return
 
+        if self._mode == ExecutionMode.DRY_RUN:
+            self.logger.info(f"[DRY] Geraria gamelist.xml com {count} entradas em {xml_out}")
+            return
+
+        # NORMAL
         xml_out.parent.mkdir(parents=True, exist_ok=True)
         tree = ET.ElementTree(root)
         ET.indent(tree, space="  ")
         tree.write(xml_out, encoding="UTF-8", xml_declaration=True)
         self._stats["entries"] = count
-        log.info(f"gamelist.xml gerado: {count} jogos → {xml_out}")
+        self.logger.info(f"gamelist.xml gerado: {count} jogos → {xml_out}")
 
     @staticmethod
     def _load_catver(path: Path) -> dict[str, str]:

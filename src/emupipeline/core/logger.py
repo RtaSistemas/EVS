@@ -58,7 +58,8 @@ def setup_logger(name: str) -> logging.Logger:
         from emupipeline.core.config import cfg
         level_str = cfg.get("global", "logging_level", "INFO")
         level = getattr(logging, level_str.upper(), logging.INFO)
-        log_dir = cfg.base_dir / "output" / "logs"
+        log_dir_raw = cfg.get("paths", "output_logs")
+        log_dir = Path(str(log_dir_raw)) if log_dir_raw else cfg.base_dir / "output" / "logs"
         use_json = bool(cfg.get("global", "structured_logging", False))
     except Exception:
         pass

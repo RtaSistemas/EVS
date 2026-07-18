@@ -72,7 +72,8 @@ class AuditReport:
 
     @property
     def total(self) -> int:
-        return len(self._entries)
+        with self._lock:
+            return len(self._entries)
 
     @property
     def destructive_count(self) -> int:

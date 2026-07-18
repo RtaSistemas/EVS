@@ -373,3 +373,66 @@ class TestGetStats:
         stats = upscaler.get_stats()
         stats["injected"] = 999
         assert "injected" not in upscaler.get_stats()
+
+
+# ---------------------------------------------------------------------------
+# Modo AUDIT
+# ---------------------------------------------------------------------------
+
+class TestAuditMode:
+    def _setup_with_image(self, config_factory, tmp_project):
+        img = tmp_project / "source" / "images" / "sf2.png"
+        img.write_bytes(b"PNG")
+        config_factory({
+            "upscale": {"engine": "waifu2x", "scale": 2,
+                        "output_format": "webp", "workers": 1, "post_process": False},
+            "paths": {"bin_waifu2x": _REAL_BIN},
+        })
+
+    def test_audit_records_per_image(self, config_factory, tmp_project):
+        from emupipeline.core.execution_mode import AuditReport, ExecutionMode
+
+        self._setup_with_image(config_factory, tmp_project)
+        audit = AuditReport()
+        from emupipeline.steps.step_upscale import Upscaler
+        upscaler = Upscaler(mode=ExecutionMode.AUDIT, audit=audit)
+        upscaler.run()
+
+        assert audit.total >= 1
+        assert "upscale_waifu2x" in [e.action for e in audit.entries()]
+
+    def test_audit_does_not_call_subprocess(self, config_factory, tmp_project):
+        from emupipeline.core.execution_mode import AuditReport, ExecutionMode
+
+        self._setup_with_image(config_factory, tmp_project)
+        audit = AuditReport()
+        from emupipeline.steps.step_upscale import Upscaler
+        upscaler = Upscaler(mode=ExecutionMode.AUDIT, audit=audit)
+
+        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+            upscaler.run()
+            mock_run.assert_not_called()
+
+    def test_audit_does_not_create_output_dir(self, config_factory, tmp_project):
+        from emupipeline.core.execution_mode import AuditReport, ExecutionMode
+
+        self._setup_with_image(config_factory, tmp_project)
+        out_dir = tmp_project / "output" / "upscaled"
+        assert not out_dir.exists()
+
+        audit = AuditReport()
+        from emupipeline.steps.step_upscale import Upscaler
+        Upscaler(mode=ExecutionMode.AUDIT, audit=audit).run()
+
+        assert not out_dir.exists()
+
+    def test_audit_without_report_object_returns_early(self, config_factory, tmp_project):
+        from emupipeline.core.execution_mode import ExecutionMode
+
+        self._setup_with_image(config_factory, tmp_project)
+        from emupipeline.steps.step_upscale import Upscaler
+        upscaler = Upscaler(mode=ExecutionMode.AUDIT, audit=None)
+
+        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+            upscaler.run()  # não deve levantar exceção
+            mock_run.assert_not_called()

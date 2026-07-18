@@ -131,6 +131,8 @@ if _PYDANTIC:
             return v
 
     class CompareConfig(BaseModel):
+        source_a:    str  = ""
+        source_b:    str  = ""
         output_dir:  str  = "output/common_files"
         copy_common: bool = True
 

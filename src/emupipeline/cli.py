@@ -85,6 +85,7 @@ def _run_pipeline(
     """Pipeline programático sem prompts interativos (para uso em testes e scripts)."""
     from emupipeline.core.execution_mode import ExecutionMode as _EM
     from emupipeline.core.logger import setup_logger
+    from emupipeline.core.metrics import MetricsCollector
     from emupipeline.core.registry import autodiscover, get_pipeline_steps
 
     if mode is None:
@@ -93,6 +94,7 @@ def _run_pipeline(
     autodiscover()
     log = setup_logger("Pipeline")
     pipeline_steps = get_pipeline_steps()
+    collector = MetricsCollector()
 
     for cls in pipeline_steps:
         try:
@@ -107,14 +109,19 @@ def _run_pipeline(
                 step.run(dat=_dat)
             else:
                 step.run()
+            if hasattr(step, "last_metrics") and step.last_metrics is not None:
+                collector.register(step.last_metrics)
         except Exception as exc:
             log.error(f"Erro em '{cls.meta.label}': {exc}")
             if stop_on_error:
                 raise
 
+    from emupipeline.core.config import cfg
+    reports = cfg.get("paths", "output_reports")
+    if reports:
+        collector.export_json(Path(str(reports)) / "metrics.json")
+
     if audit is not None:
-        from emupipeline.core.config import cfg
-        reports = cfg.get("paths", "output_reports")
         if reports:
             audit.export_json(Path(str(reports)) / "audit_report.json")
             audit.export_html(Path(str(reports)) / "audit_report.html")
@@ -122,6 +129,7 @@ def _run_pipeline(
 
 def run_full_pipeline(mode, audit=None) -> None:
     from emupipeline.core.logger import setup_logger
+    from emupipeline.core.metrics import MetricsCollector
     from emupipeline.core.registry import get_pipeline_steps
 
     log = setup_logger("Pipeline")
@@ -139,6 +147,7 @@ def run_full_pipeline(mode, audit=None) -> None:
         raise SystemExit("\n❌ Corrija as dependências antes de continuar.")
 
     pipeline_steps = get_pipeline_steps()
+    collector = MetricsCollector()
     dat = None
 
     for cls in pipeline_steps:
@@ -154,6 +163,8 @@ def run_full_pipeline(mode, audit=None) -> None:
                 step.run(dat=dat)
             else:
                 step.run()
+            if hasattr(step, "last_metrics") and step.last_metrics is not None:
+                collector.register(step.last_metrics)
         except Exception as exc:
             log.error(f"Erro em '{cls.meta.label}': {exc}")
             traceback.print_exc()
@@ -163,11 +174,14 @@ def run_full_pipeline(mode, audit=None) -> None:
                 return
 
     log.info("\n>>> Pipeline completo finalizado.")
+    collector.print_summary()
 
-    # Exporta métricas de auditoria
+    reports = cfg.get("paths", "output_reports")
+    if reports:
+        collector.export_json(Path(str(reports)) / "metrics.json")
+
+    # Exporta relatório de auditoria
     if audit is not None:
-        from emupipeline.core.config import cfg
-        reports = cfg.get("paths", "output_reports")
         if reports:
             audit.export_json(Path(str(reports)) / "audit_report.json")
             audit.export_html(Path(str(reports)) / "audit_report.html")
