@@ -14,8 +14,7 @@ Foco em:
 from __future__ import annotations
 
 from contextlib import nullcontext
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -235,3 +234,128 @@ class TestExecutionModes:
         opt.process_file(video)
 
         assert report.destructive_count == 1
+
+    def test_audit_without_report_returns_error(self, config_factory, tmp_path):
+        """AUDIT sem AuditReport deve retornar 'error' sem levantar exceção."""
+        config_factory()
+        from emupipeline.steps.step_optimize import VideoOptimizer
+        opt = VideoOptimizer(mode=ExecutionMode.AUDIT, audit=None)
+        video = tmp_path / "game.mp4"
+        video.write_bytes(b"X" * 100)
+        result = opt.process_file(video)
+        assert result == "error"
+
+
+# ---------------------------------------------------------------------------
+# run() — early return quando videos_dir ausente
+# ---------------------------------------------------------------------------
+
+class TestRunEarlyReturn:
+    def test_run_missing_videos_dir_returns_early(self, config_factory, tmp_project):
+        """run() não deve processar nada quando o diretório de vídeos não existe."""
+        import shutil
+        config_factory()
+        shutil.rmtree(tmp_project / "source" / "videos", ignore_errors=True)
+
+        from emupipeline.steps.step_optimize import VideoOptimizer
+        opt = VideoOptimizer()
+        with patch("emupipeline.steps.step_optimize.subprocess.Popen") as mock_popen:
+            opt.run()
+            mock_popen.assert_not_called()
+
+    def test_run_missing_videos_dir_stat_empty(self, config_factory, tmp_project):
+        import shutil
+        config_factory()
+        shutil.rmtree(tmp_project / "source" / "videos", ignore_errors=True)
+
+        from emupipeline.steps.step_optimize import VideoOptimizer
+        opt = VideoOptimizer()
+        opt.run()
+        assert opt.get_stats() == {}
+
+
+# ---------------------------------------------------------------------------
+# delete_original após conversão bem-sucedida
+# ---------------------------------------------------------------------------
+
+class TestDeleteOriginalAfterSuccess:
+    @patch("emupipeline.steps.step_optimize.subprocess.run")
+    @patch("emupipeline.steps.step_optimize.subprocess.Popen")
+    def test_delete_original_removes_source_on_success(self, mock_popen, mock_ffprobe, config_factory, tmp_path):
+        config_factory({"videos": {"codec": "libx265", "crf": 28, "smart_skip": True,
+                                    "delete_original": True, "extensions": [".avi"],
+                                    "preset": "fast"}})
+        from emupipeline.steps.step_optimize import VideoOptimizer
+        opt = VideoOptimizer()
+
+        mock_ffprobe.return_value = MagicMock(stdout="mpeg4\n", returncode=0)
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (b"", b"")
+        mock_proc.returncode = 0
+        mock_proc.pid = 9999
+        mock_popen.return_value = mock_proc
+
+        original = tmp_path / "game.avi"
+        original.write_bytes(b"A" * 200)
+        dummy_out = tmp_path / "game.mp4"
+        dummy_out.write_bytes(b"X" * 200)
+
+        from contextlib import nullcontext
+        with patch("emupipeline.steps.step_optimize.atomic_write",
+                   side_effect=lambda p: nullcontext(dummy_out)):
+            result = opt.process_file(original)
+
+        assert result == "optimized"
+        assert not original.exists()
+
+
+# ---------------------------------------------------------------------------
+# _probe_codec — exception silenciada
+# ---------------------------------------------------------------------------
+
+class TestProbeCodec:
+    def test_probe_codec_returns_none_on_exception(self, config_factory, tmp_path):
+        config_factory()
+        from emupipeline.steps.step_optimize import VideoOptimizer
+        opt = VideoOptimizer()
+
+        video = tmp_path / "game.mp4"
+        video.write_bytes(b"X" * 100)
+
+        with patch("emupipeline.steps.step_optimize.subprocess.run", side_effect=OSError("no ffprobe")):
+            result = opt._probe_codec(video)
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _run_ffmpeg — timeout mata grupo de processos
+# ---------------------------------------------------------------------------
+
+class TestRunFfmpegTimeout:
+    @patch("emupipeline.steps.step_optimize.subprocess.run")
+    def test_timeout_kills_process_group(self, mock_ffprobe, config_factory, tmp_path):
+        mock_ffprobe.return_value = MagicMock(stdout="mpeg4\n", returncode=0)
+        config_factory()
+        import signal
+        import subprocess as sp
+
+        from emupipeline.steps.step_optimize import VideoOptimizer
+
+        opt = VideoOptimizer()
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.communicate.side_effect = sp.TimeoutExpired("ffmpeg", 3600)
+
+        with (
+            patch("emupipeline.steps.step_optimize.subprocess.Popen", return_value=mock_proc),
+            patch("emupipeline.steps.step_optimize.os.killpg") as mock_killpg,
+            patch("emupipeline.steps.step_optimize.os.getpgid", return_value=12345),
+        ):
+            video = tmp_path / "game.avi"
+            video.write_bytes(b"X" * 100)
+            result = opt.process_file(video)
+
+        assert result == "error"
+        mock_killpg.assert_called_once_with(12345, signal.SIGKILL)
