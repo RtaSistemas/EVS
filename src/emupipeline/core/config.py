@@ -92,15 +92,16 @@ class ConfigLoader:
         cfg.get("images")             → sub-objeto com atributos
         """
         section_map = {
-            "global":  lambda: self._schema.global_,  # type: ignore[union-attr]
-            "paths":   lambda: self._schema.paths,    # type: ignore[union-attr]
-            "roms":    lambda: self._schema.roms,     # type: ignore[union-attr]
-            "images":  lambda: self._schema.images,   # type: ignore[union-attr]
-            "webp":    lambda: self._schema.webp,     # type: ignore[union-attr]
-            "videos":  lambda: self._schema.videos,   # type: ignore[union-attr]
-            "upscale": lambda: self._schema.upscale,  # type: ignore[union-attr]
-            "compare": lambda: self._schema.compare,  # type: ignore[union-attr]
-            "ports":   lambda: self._schema.ports,    # type: ignore[union-attr]
+            "global":    lambda: self._schema.global_,   # type: ignore[union-attr]
+            "paths":     lambda: self._schema.paths,     # type: ignore[union-attr]
+            "roms":      lambda: self._schema.roms,      # type: ignore[union-attr]
+            "images":    lambda: self._schema.images,    # type: ignore[union-attr]
+            "webp":      lambda: self._schema.webp,      # type: ignore[union-attr]
+            "videos":    lambda: self._schema.videos,    # type: ignore[union-attr]
+            "upscale":   lambda: self._schema.upscale,   # type: ignore[union-attr]
+            "compare":   lambda: self._schema.compare,   # type: ignore[union-attr]
+            "ports":     lambda: self._schema.ports,     # type: ignore[union-attr]
+            "compress":  lambda: self._schema.compress,  # type: ignore[union-attr]
         }
         getter = section_map.get(section)
         if getter is None:

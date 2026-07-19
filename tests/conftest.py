@@ -133,6 +133,16 @@ def config_factory(tmp_project: Path, monkeypatch: pytest.MonkeyPatch):
                 "post_process":  False,
             },
             "compare": {"output_dir": "output/common_files", "copy_common": False},
+            "compress": {
+                "delete_original": False,
+                "output_dir":      "",
+                "chdman_bin":      "chdman",
+                "dolphin_bin":     "DolphinTool",
+                "maxcso_bin":      "maxcso",
+                "rvz_compression": "zstd",
+                "rvz_level":       5,
+                "psp_format":      "cso",
+            },
             "ports": {
                 "source_dir":         str(base / "ports"),
                 "output_dir":         str(base / "output" / "ports_launchers"),

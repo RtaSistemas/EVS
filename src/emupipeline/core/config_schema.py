@@ -136,6 +136,19 @@ if _PYDANTIC:
         output_dir:  str  = "output/common_files"
         copy_common: bool = True
 
+    class CompressConfig(BaseModel):
+        delete_original: bool = False
+        output_dir:      str  = ""
+        chdman_bin:      str  = "chdman"
+        dolphin_bin:     str  = "DolphinTool"
+        maxcso_bin:      str  = "maxcso"
+        rvz_compression: str  = Field(
+            default="zstd",
+            pattern="^(zstd|bzip2|lzma|lzma2|none)$",
+        )
+        rvz_level:       int  = Field(default=5, ge=1, le=9)
+        psp_format:      str  = Field(default="cso", pattern="^(cso|zso)$")
+
     class PortsConfig(BaseModel):
         source_dir:           ExpandedPath    = Field(default=Path("~/Emulation/ports"))
         output_dir:           ExpandedPath    = Field(default=Path("~/Emulation/tools/ports_launchers"))
@@ -147,15 +160,16 @@ if _PYDANTIC:
         windows_environment:  dict[str, str]  = Field(default_factory=dict)
 
     class ConfigSchema(BaseModel):
-        global_:  GlobalConfig  = Field(alias="global", default_factory=GlobalConfig)
-        paths:    PathsConfig
-        roms:     RomsConfig    = Field(default_factory=RomsConfig)
-        images:   ImagesConfig  = Field(default_factory=ImagesConfig)
-        webp:     WebpConfig    = Field(default_factory=WebpConfig)
-        videos:   VideosConfig  = Field(default_factory=VideosConfig)
-        upscale:  UpscaleConfig = Field(default_factory=UpscaleConfig)
-        compare:  CompareConfig = Field(default_factory=CompareConfig)
-        ports:    PortsConfig   = Field(default_factory=PortsConfig)
+        global_:   GlobalConfig   = Field(alias="global", default_factory=GlobalConfig)
+        paths:     PathsConfig
+        roms:      RomsConfig     = Field(default_factory=RomsConfig)
+        images:    ImagesConfig   = Field(default_factory=ImagesConfig)
+        webp:      WebpConfig     = Field(default_factory=WebpConfig)
+        videos:    VideosConfig   = Field(default_factory=VideosConfig)
+        upscale:   UpscaleConfig  = Field(default_factory=UpscaleConfig)
+        compare:   CompareConfig  = Field(default_factory=CompareConfig)
+        ports:     PortsConfig    = Field(default_factory=PortsConfig)
+        compress:  CompressConfig = Field(default_factory=CompressConfig)
         model_config = {"populate_by_name": True}
 
     def load_and_validate(path: Path, raw: dict) -> ConfigSchema:
