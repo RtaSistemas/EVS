@@ -40,7 +40,7 @@ class TestBinaryNotFound:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             upscaler.run()
             mock_run.assert_not_called()
 
@@ -72,7 +72,7 @@ class TestNoImages:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             upscaler.run()
             mock_run.assert_not_called()
 
@@ -105,7 +105,7 @@ class TestDryRun:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler(mode=ExecutionMode.DRY_RUN)
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             upscaler.run()
             mock_run.assert_not_called()
 
@@ -143,7 +143,7 @@ class TestSuccessfulUpscale:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             upscaler.run()
 
@@ -164,7 +164,7 @@ class TestSuccessfulUpscale:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             upscaler.run()
 
@@ -184,7 +184,7 @@ class TestSuccessfulUpscale:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             upscaler.run()
 
@@ -202,7 +202,7 @@ class TestSuccessfulUpscale:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             upscaler.run()
 
@@ -216,9 +216,7 @@ class TestSuccessfulUpscale:
 # ---------------------------------------------------------------------------
 
 class TestUpscalerError:
-    def test_called_process_error_sets_error_stat(self, config_factory, tmp_project):
-        import subprocess
-
+    def test_failure_returncode_sets_error_stat(self, config_factory, tmp_project):
         img = tmp_project / "source" / "images" / "sf2.png"
         img.write_bytes(b"PNG")
 
@@ -230,15 +228,13 @@ class TestUpscalerError:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run",
-                   side_effect=subprocess.CalledProcessError(1, "waifu2x")):
+        with patch("emupipeline.core.processor.subprocess.run",
+                   return_value=MagicMock(returncode=1, stderr="")):
             upscaler.run()
 
         assert upscaler.get_stats().get("error") == 1
 
-    def test_called_process_error_does_not_propagate(self, config_factory, tmp_project):
-        import subprocess
-
+    def test_failure_does_not_propagate(self, config_factory, tmp_project):
         img = tmp_project / "source" / "images" / "sf2.png"
         img.write_bytes(b"PNG")
 
@@ -250,10 +246,10 @@ class TestUpscalerError:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        # Não deve levantar exceção
-        with patch("emupipeline.steps.step_upscale.subprocess.run",
-                   side_effect=subprocess.CalledProcessError(1, "waifu2x")):
-            upscaler.run()  # sem assert, só verificamos que não propagou
+        # Não deve levantar exceção com returncode != 0
+        with patch("emupipeline.core.processor.subprocess.run",
+                   return_value=MagicMock(returncode=1, stderr="")):
+            upscaler.run()
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +275,7 @@ class TestPillowPostProcess:
         upscaler = Upscaler()
 
         with patch.object(Upscaler, "_apply_unsharp_pillow") as mock_apply:
-            with patch("emupipeline.steps.step_upscale.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        return_value=MagicMock(returncode=0)):
                 upscaler.run()
 
@@ -291,7 +287,7 @@ class TestPillowPostProcess:
         upscaler = Upscaler()
 
         with patch.object(Upscaler, "_apply_unsharp_pillow") as mock_apply:
-            with patch("emupipeline.steps.step_upscale.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        return_value=MagicMock(returncode=0)):
                 upscaler.run()
 
@@ -349,7 +345,7 @@ class TestPillowPostProcess:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler()
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run",
+        with patch("emupipeline.core.processor.subprocess.run",
                    return_value=MagicMock(returncode=0)):
             upscaler.run()
 
@@ -409,7 +405,7 @@ class TestAuditMode:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler(mode=ExecutionMode.AUDIT, audit=audit)
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             upscaler.run()
             mock_run.assert_not_called()
 
@@ -433,6 +429,6 @@ class TestAuditMode:
         from emupipeline.steps.step_upscale import Upscaler
         upscaler = Upscaler(mode=ExecutionMode.AUDIT, audit=None)
 
-        with patch("emupipeline.steps.step_upscale.subprocess.run") as mock_run:
+        with patch("emupipeline.core.processor.subprocess.run") as mock_run:
             upscaler.run()  # não deve levantar exceção
             mock_run.assert_not_called()

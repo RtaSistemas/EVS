@@ -63,12 +63,10 @@ class RomValidator(WholeRunStep):
         self.logger.info(f"Extras        : {len(extras)}")
         self.logger.info("=" * 50)
 
-        self._stats = {
-            "dat_total": len(dat_names),
-            "found": found,
-            "missing": len(missing),
-            "extras": len(extras),
-        }
+        self.update_stat("dat_total", len(dat_names))
+        self.update_stat("found",     found)
+        self.update_stat("missing",   len(missing))
+        self.update_stat("extras",    len(extras))
 
         reports_dir = self.config.get("paths", "output_reports")
         if not reports_dir:

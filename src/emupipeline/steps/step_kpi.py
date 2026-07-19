@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -23,8 +24,8 @@ def _dir_stats(path: Path) -> tuple[int, int]:
             if p.is_file() and not p.is_symlink():
                 count += 1
                 size  += p.stat().st_size
-    except PermissionError:
-        pass
+    except PermissionError as exc:
+        logging.getLogger("KpiReporter").warning(f"Sem permissão ao escanear {path}: {exc}")
     return count, size
 
 
@@ -94,7 +95,7 @@ class KpiReporter(WholeRunStep):
             csv_path.write_text(buf.getvalue(), encoding="utf-8")
             self.logger.info(f"KPI salvo em: {csv_path}")
 
-        self._stats["directories_analyzed"] = len(rows)
+        self.update_stat("directories_analyzed", len(rows))
 
     def _log_table(self, rows: list[tuple[str, int, float]]) -> None:
         sep = "─" * 55

@@ -228,15 +228,16 @@ else:  # pragma: no cover
             if not isinstance(ft, (int, float)) or not (0.0 <= ft <= 1.0):
                 _fail("images.fuzzy_threshold", ft, "deve ser float entre 0.0 e 1.0")
 
-            self.global_ = _NS({**g, "base_dir": base})
-            self.paths   = _NS(raw.get("paths", {}), base)
-            self.roms    = _NS(raw.get("roms",   {}))
-            self.images  = _NS(raw.get("images", {}))
-            self.webp    = _NS(raw.get("webp",   {}))
-            self.videos  = _NS(raw.get("videos", {}))
-            self.upscale = _NS(raw.get("upscale",{}))
-            self.compare = _NS(raw.get("compare",{}))
-            self.ports   = _NS(raw.get("ports",  {}))
+            self.global_  = _NS({**g, "base_dir": base})
+            self.paths    = _NS(raw.get("paths",    {}), base)
+            self.roms     = _NS(raw.get("roms",     {}))
+            self.images   = _NS(raw.get("images",   {}))
+            self.webp     = _NS(raw.get("webp",     {}))
+            self.videos   = _NS(raw.get("videos",   {}))
+            self.upscale  = _NS(raw.get("upscale",  {}))
+            self.compare  = _NS(raw.get("compare",  {}))
+            self.ports    = _NS(raw.get("ports",    {}))
+            self.compress = _NS(raw.get("compress", {}))
 
     def load_and_validate(path: Path, raw: dict) -> ConfigSchema:  # type: ignore[misc]
         return ConfigSchema(raw)

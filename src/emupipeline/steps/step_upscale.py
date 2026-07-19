@@ -4,7 +4,6 @@ Herda BaseProcessor (arquitetura consistente).
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
@@ -96,11 +95,9 @@ class Upscaler(WholeRunStep):
             "-s", str(scale), "-f", fmt, "-j", f"1:{workers}:1",
         ]
 
-        try:
-            subprocess.run(cmd, timeout=21600, check=True)
+        if self.run_subprocess(cmd, timeout=21600, src_name=engine):
             self.update_stat("processed", len(images))
-        except subprocess.CalledProcessError as exc:
-            self.logger.error(f"Upscaler falhou: {exc}")
+        else:
             self.update_stat("error")
             return
 
@@ -128,7 +125,11 @@ class Upscaler(WholeRunStep):
                 percent   = round(amount * 100)
                 threshold = min(255, round(thresh * 255))
         except (ValueError, IndexError):
-            pass
+            self.logger.warning(
+                f"Spec unsharp inválida {spec!r} — usando defaults (radius={radius}, "
+                f"percent={percent}, threshold={threshold}). "
+                "Formato esperado: RxSIGMA+AMOUNT+THRESH"
+            )
 
         self.logger.info("Aplicando pós-processamento (unsharp mask via Pillow)…")
         errors = 0

@@ -162,7 +162,7 @@ class VideoOptimizer(BaseProcessor):
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except ProcessLookupError:
-                pass
+                self.logger.debug(f"Processo ffmpeg {proc.pid} já terminou antes do SIGKILL")
             proc.wait()
             raise
 
