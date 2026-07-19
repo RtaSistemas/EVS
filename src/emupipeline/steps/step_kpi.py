@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
@@ -29,7 +29,7 @@ def _dir_stats(path: Path) -> tuple[int, int]:
 
 
 @register
-class KpiReporter(BaseProcessor):
+class KpiReporter(WholeRunStep):
     meta = StepMeta(
         id="kpi_report",
         menu_number=10,
@@ -45,9 +45,6 @@ class KpiReporter(BaseProcessor):
         audit: Optional[AuditReport] = None,
     ) -> None:
         super().__init__("KpiReporter", mode=mode, audit=audit)
-
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
         targets = {
@@ -65,8 +62,7 @@ class KpiReporter(BaseProcessor):
                 rows.append((label, count, size / 1024 / 1024))
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            if not self._require_audit():
                 return
             for label, path in targets.items():
                 if path and Path(str(path)).exists():

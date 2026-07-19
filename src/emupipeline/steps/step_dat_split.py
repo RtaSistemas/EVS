@@ -19,14 +19,14 @@ from typing import Any, Optional
 
 from emupipeline.core.dat_manager import resolve_driver
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 from emupipeline.core.transaction import StagingTransaction
 
 
 @register
-class DatSplitter(BaseProcessor):
+class DatSplitter(WholeRunStep):
     meta = StepMeta(
         id="dat_split",
         menu_number=1,
@@ -42,9 +42,6 @@ class DatSplitter(BaseProcessor):
         audit: Optional[AuditReport] = None,
     ) -> None:
         super().__init__("DatSplitter", mode=mode, audit=audit)
-
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
         dat_path = self.config.get("paths", "dat_file")
@@ -107,8 +104,7 @@ class DatSplitter(BaseProcessor):
         self.logger.info(f"Total: {total} | Mantidos: {kept} | Excluídos: {total - kept}")
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            if not self._require_audit():
                 return
             records = groups.items() if split else [("combined", [m for ms in groups.values() for m in ms])]
             for driver, machines in records:

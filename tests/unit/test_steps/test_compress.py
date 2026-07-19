@@ -38,7 +38,7 @@ class TestUnknownSystem:
         from emupipeline.steps.step_compress import RomCompressor
         rc = RomCompressor()
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run"
+            "emupipeline.core.processor.subprocess.run"
         ) as mock_run:
             rc.run()
             mock_run.assert_not_called()
@@ -72,7 +72,7 @@ class TestBinaryNotFound:
             return None if "chdman" in name else _REAL_BIN
 
         with patch("shutil.which", side_effect=mock_which), patch(
-            "emupipeline.steps.step_compress.subprocess.run"
+            "emupipeline.core.processor.subprocess.run"
         ) as mock_run:
             rc.run()
             mock_run.assert_not_called()
@@ -110,7 +110,7 @@ class TestAlreadyCompressed:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run"
+            "emupipeline.core.processor.subprocess.run"
         ) as mock_run:
             rc.run()
             mock_run.assert_not_called()
@@ -133,7 +133,7 @@ class TestDryRunMode:
         rc = RomCompressor(mode=ExecutionMode.DRY_RUN)
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run"
+            "emupipeline.core.processor.subprocess.run"
         ) as mock_run:
             rc.run()
             mock_run.assert_not_called()
@@ -196,7 +196,7 @@ class TestAuditMode:
         rc = RomCompressor(mode=ExecutionMode.AUDIT, audit=audit)
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run"
+            "emupipeline.core.processor.subprocess.run"
         ) as mock_run:
             rc.run()
             mock_run.assert_not_called()
@@ -255,7 +255,7 @@ class TestAuditMode:
         rc = RomCompressor(mode=ExecutionMode.AUDIT, audit=None)
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run"
+            "emupipeline.core.processor.subprocess.run"
         ) as mock_run:
             rc.run()  # não deve levantar exceção
             mock_run.assert_not_called()
@@ -279,7 +279,7 @@ class TestNormalMode:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=0, stderr=""),
         ):
             rc.run()
@@ -292,7 +292,7 @@ class TestNormalMode:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=1, stderr="error detail"),
         ):
             rc.run()
@@ -305,7 +305,7 @@ class TestNormalMode:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             side_effect=subprocess.TimeoutExpired("chdman", 3600),
         ):
             rc.run()
@@ -318,7 +318,7 @@ class TestNormalMode:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=0, stderr=""),
         ) as mock_run:
             rc.run()
@@ -337,7 +337,7 @@ class TestNormalMode:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=0, stderr=""),
         ) as mock_run:
             rc.run()
@@ -377,7 +377,7 @@ class TestNormalMode:
             return MagicMock(returncode=0, stderr="")
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run", side_effect=mock_run
+            "emupipeline.core.processor.subprocess.run", side_effect=mock_run
         ):
             rc.run()
 
@@ -400,7 +400,7 @@ class TestDeleteOriginal:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=0, stderr=""),
         ):
             rc.run()
@@ -418,7 +418,7 @@ class TestDeleteOriginal:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=0, stderr=""),
         ):
             rc.run()
@@ -436,7 +436,7 @@ class TestDeleteOriginal:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=1, stderr="fail"),
         ):
             rc.run()
@@ -460,7 +460,7 @@ class TestSeparateOutputDir:
         rc = RomCompressor()
 
         with patch("shutil.which", return_value=_REAL_BIN), patch(
-            "emupipeline.steps.step_compress.subprocess.run",
+            "emupipeline.core.processor.subprocess.run",
             return_value=MagicMock(returncode=0, stderr=""),
         ) as mock_run:
             rc.run()

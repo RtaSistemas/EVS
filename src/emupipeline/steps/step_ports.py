@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
@@ -37,7 +37,7 @@ Categories=Game;
 
 
 @register
-class PortsAutomator(BaseProcessor):
+class PortsAutomator(WholeRunStep):
     meta = StepMeta(
         id="ports_launchers",
         menu_number=11,
@@ -54,12 +54,12 @@ class PortsAutomator(BaseProcessor):
     ) -> None:
         super().__init__("PortsAutomator", mode=mode, audit=audit)
 
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
-
     def run(self, **kwargs: Any) -> None:
         ports_cfg   = self.config.get("ports")
-        src_dir     = Path(str(getattr(ports_cfg, "source_dir",  "~/Emulation/ports"))).expanduser()
+        src_dir     = self._resolve_dir(
+            Path(str(getattr(ports_cfg, "source_dir", "~/Emulation/ports"))).expanduser(),
+            "Diretório de ports",
+        )
         out_dir     = Path(str(getattr(ports_cfg, "output_dir",  "~/Emulation/tools/ports_launchers"))).expanduser()
         runner      = str(getattr(ports_cfg, "windows_runner", "wine"))
         win_exts    = set(getattr(ports_cfg, "windows_extensions", [".exe"]))
@@ -70,8 +70,7 @@ class PortsAutomator(BaseProcessor):
 
         extra_env_lines = "\n".join(f'export {k}="{v}"' for k, v in win_env.items())
 
-        if not src_dir.exists():
-            self.logger.error(f"Diretório de ports não encontrado: {src_dir}")
+        if src_dir is None:
             return
 
         if self._mode == ExecutionMode.NORMAL:
@@ -93,12 +92,8 @@ class PortsAutomator(BaseProcessor):
             desktop_path = out_dir / f"{port_dir.name}.desktop"
 
             if self._mode == ExecutionMode.AUDIT:
-                if self._audit is None:
-                    self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                    self.update_stat("error")
-                    continue
-                self._audit.record(
-                    step=self.name, action="create_launcher",
+                self._audit_record(
+                    action="create_launcher",
                     source=str(port_dir), dest=str(desktop_path),
                     reason=f"{'Wine' if is_windows else 'Linux'} port",
                 )

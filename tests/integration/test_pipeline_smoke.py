@@ -220,7 +220,7 @@ class TestConvertCleanSeparation:
 # ---------------------------------------------------------------------------
 
 class TestFullPipelineSmoke:
-    @patch("emupipeline.steps.step_rom_manager.subprocess.run")
+    @patch("emupipeline.core.processor.subprocess.run")
     @patch("emupipeline.steps.step_optimize.subprocess.run")
     @patch("emupipeline.steps.step_optimize.subprocess.Popen")
     def test_pipeline_completes_without_crash(

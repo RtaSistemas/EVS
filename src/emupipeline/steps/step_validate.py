@@ -10,13 +10,13 @@ from typing import Any, Optional
 
 from emupipeline.core.dat_manager import DatMaster
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
 
 @register
-class RomValidator(BaseProcessor):
+class RomValidator(WholeRunStep):
     meta = StepMeta(
         id="validate_roms",
         menu_number=3,
@@ -36,23 +36,17 @@ class RomValidator(BaseProcessor):
         super().__init__("RomValidator", mode=mode, audit=audit)
         self._dat = dat
 
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
-
     def run(self, dat: Optional[DatMaster] = None, **kwargs: Any) -> None:
-        self._dat = dat or self._dat
-        if self._dat is None:
-            self.logger.error("DatMaster não fornecido.")
+        if not self._resolve_dat(dat):
             return
 
-        roms_dir = self.config.get("paths", "input_roms")
-        if not roms_dir or not Path(roms_dir).exists():
-            self.logger.error(f"Diretório de ROMs não encontrado: {roms_dir}")
+        roms_dir = self._resolve_dir(self.config.get("paths", "input_roms"), "Diretório de ROMs")
+        if roms_dir is None:
             return
 
         local_names = {
             p.stem.lower()
-            for p in Path(roms_dir).rglob("*.zip")
+            for p in roms_dir.rglob("*.zip")
         }
         dat_names = set(self._dat.rom_map.keys())
 
@@ -81,8 +75,7 @@ class RomValidator(BaseProcessor):
             return
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            if not self._require_audit():
                 return
             self._audit.record(
                 step=self.name, action="write_validation_report",

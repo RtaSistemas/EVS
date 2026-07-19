@@ -53,21 +53,17 @@ class ImageOrganizer(BaseProcessor):
         self._out_dir: Path = Path(".")
 
     def run(self, dat: Optional[DatMaster] = None, **kwargs: Any) -> None:
-        self._dat = dat or self._dat
-        if self._dat is None:
-            self.logger.error("DatMaster não fornecido. Use run(dat=DatMaster(...))")
+        if not self._resolve_dat(dat):
             return
 
-        src_dir = self.config.get("paths", "input_imgs")
+        src_dir = self._resolve_dir(self.config.get("paths", "input_imgs"), "Diretório de imagens de entrada")
+        if src_dir is None:
+            return
         out_dir = self.config.get("paths", "output_imgs")
-
-        if not src_dir or not Path(src_dir).exists():
-            self.logger.error(f"Diretório de imagens não encontrado: {src_dir}")
-            return
 
         if self._mode == ExecutionMode.NORMAL:
             Path(out_dir).mkdir(parents=True, exist_ok=True)
-        files = self.scan(Path(src_dir), extensions=self._valid_exts)
+        files = self.scan(src_dir, extensions=self._valid_exts)
         self._out_dir = Path(out_dir)
         self.run_parallel(files)
         self._save_unmatched_report()
@@ -113,15 +109,11 @@ class ImageOrganizer(BaseProcessor):
             return "skipped_exists"
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                return "error"
-            self._audit.record(
-                step=self.name, action=f"create_{self._mode_img}",
+            return self._audit_record(
+                action=f"create_{self._mode_img}",
                 source=str(file_path), dest=str(dest),
                 reason=f"match={match_type} game={rom_name}",
             )
-            return "audit_recorded"
 
         if self._mode == ExecutionMode.DRY_RUN:
             self.logger.debug(f"[DRY] {match_type}: {file_path.name} → {dest.name}")

@@ -77,27 +77,22 @@ class VideoOptimizer(BaseProcessor):
         return max(1, global_threads // 2)
 
     def run(self, **kwargs: Any) -> None:
-        videos_dir = self.config.get("paths", "videos_dir")
-        if not videos_dir or not Path(videos_dir).exists():
-            self.logger.error(f"Diretório de vídeos não encontrado: {videos_dir}")
+        videos_dir = self._resolve_dir(self.config.get("paths", "videos_dir"), "Diretório de vídeos")
+        if videos_dir is None:
             return
-        files = self.scan(Path(videos_dir), extensions=self._extensions)
+        files = self.scan(videos_dir, extensions=self._extensions)
         self.run_parallel(files, threads=self._python_workers)
 
     def process_file(self, file_path: Path) -> str:
         final_out = file_path.with_suffix(".mp4")
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                return "error"
-            self._audit.record(
-                step=self.name, action="optimize_video",
+            return self._audit_record(
+                action="optimize_video",
                 source=str(file_path), dest=str(final_out),
                 reason=f"→ {self.codec} crf={self.crf}",
                 would_delete=self.delete_original and file_path != final_out,
             )
-            return "audit_recorded"
 
         if self._mode == ExecutionMode.DRY_RUN:
             self.logger.debug(f"[DRY] Reencodaria: {file_path.name}")

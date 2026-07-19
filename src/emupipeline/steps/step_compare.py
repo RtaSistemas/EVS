@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
 
 @register
-class FolderComparator(BaseProcessor):
+class FolderComparator(WholeRunStep):
     meta = StepMeta(
         id="compare_folders",
         menu_number=4,
@@ -31,9 +31,6 @@ class FolderComparator(BaseProcessor):
         audit: Optional[AuditReport] = None,
     ) -> None:
         super().__init__("FolderComparator", mode=mode, audit=audit)
-
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
 
     def run(self, dir_a: str = "", dir_b: str = "", **kwargs: Any) -> None:
         if not dir_a or not dir_b:

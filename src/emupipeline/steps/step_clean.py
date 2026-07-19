@@ -41,13 +41,12 @@ class OriginalCleaner(BaseProcessor):
         self._src_exts: set[str] = {".png", ".jpg", ".jpeg", ".bmp"}
 
     def run(self, **kwargs: Any) -> None:
-        source_dir = self.config.get("paths", "output_imgs")
-        if not source_dir or not Path(source_dir).exists():
-            self.logger.error(f"Diretório não encontrado: {source_dir}")
+        source_dir = self._resolve_dir(self.config.get("paths", "output_imgs"), "Diretório de imagens de saída")
+        if source_dir is None:
             return
 
         # Conta candidatos antes de pedir confirmação
-        candidates = self._find_candidates(Path(source_dir))
+        candidates = self._find_candidates(source_dir)
         if not candidates:
             self.logger.info("Nenhum original com WebP correspondente encontrado.")
             return
@@ -61,8 +60,7 @@ class OriginalCleaner(BaseProcessor):
             return
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            if not self._require_audit():
                 return
             for orig, webp in candidates:
                 self._audit.record(
@@ -114,15 +112,7 @@ class OriginalCleaner(BaseProcessor):
             self.logger.debug(f"[DRY] deletaria {file_path.name}")
             return "dry_run"
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                return "error"
-            self._audit.record(
-                step=self.name, action="delete_original",
-                source=str(file_path), reason=f"WebP existe: {webp.name}",
-                would_delete=True,
-            )
-            return "audit_recorded"
+            return self._audit_record(action="delete_original", source=str(file_path), reason=f"WebP existe: {webp.name}", would_delete=True)
         try:
             file_path.unlink()
             return "deleted"

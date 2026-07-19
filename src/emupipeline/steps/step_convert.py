@@ -52,11 +52,10 @@ class WebPConverter(BaseProcessor):
         self._source_dir: Optional[Path] = None
 
     def run(self, **kwargs: Any) -> None:
-        source_dir = self.config.get("paths", "output_imgs")
-        if not source_dir or not Path(source_dir).exists():
-            self.logger.error(f"Diretório de imagens não encontrado: {source_dir}")
+        source_dir = self._resolve_dir(self.config.get("paths", "output_imgs"), "Diretório de imagens")
+        if source_dir is None:
             return
-        self._source_dir = Path(source_dir)
+        self._source_dir = source_dir
         files = self.scan(self._source_dir, extensions=self._src_exts)
         self.run_parallel(files)
 
@@ -67,15 +66,12 @@ class WebPConverter(BaseProcessor):
             return "skipped_exists"
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                return "error"
-            self._audit.record(
-                step=self.name, action="convert_to_webp",
-                source=str(file_path), dest=str(dest),
+            return self._audit_record(
+                action="convert_to_webp",
+                source=str(file_path),
+                dest=str(dest),
                 reason=f"{file_path.suffix.upper()} → WebP q={self.quality}",
             )
-            return "audit_recorded"
 
         if self._mode == ExecutionMode.DRY_RUN:
             self.logger.debug(f"[DRY] Converteria: {file_path.name}")

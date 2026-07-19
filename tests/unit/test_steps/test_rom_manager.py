@@ -24,7 +24,7 @@ class TestIgirNotFound:
 
         with patch("shutil.which", return_value=None):
             rm = RomManager()
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run") as mock_run:
+            with patch("emupipeline.core.processor.subprocess.run") as mock_run:
                 rm.run()
                 mock_run.assert_not_called()
 
@@ -50,7 +50,7 @@ class TestIgirDisabled:
 
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager()
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run") as mock_run:
+            with patch("emupipeline.core.processor.subprocess.run") as mock_run:
                 rm.run()
                 mock_run.assert_not_called()
 
@@ -75,7 +75,7 @@ class TestDryRunMode:
 
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager(mode=ExecutionMode.DRY_RUN)
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run") as mock_run:
+            with patch("emupipeline.core.processor.subprocess.run") as mock_run:
                 rm.run()
                 mock_run.assert_not_called()
 
@@ -101,7 +101,7 @@ class TestAuditMode:
         with patch("shutil.which", return_value="/usr/bin/igir"):
             from emupipeline.steps.step_rom_manager import RomManager
             rm = RomManager(mode=ExecutionMode.AUDIT, audit=audit)
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run") as mock_run:
+            with patch("emupipeline.core.processor.subprocess.run") as mock_run:
                 rm.run()
                 mock_run.assert_not_called()
 
@@ -115,7 +115,7 @@ class TestAuditMode:
         with patch("shutil.which", return_value="/usr/bin/igir"):
             from emupipeline.steps.step_rom_manager import RomManager
             rm = RomManager(mode=ExecutionMode.AUDIT, audit=audit)
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run") as mock_run:
+            with patch("emupipeline.core.processor.subprocess.run") as mock_run:
                 rm.run()
                 mock_run.assert_not_called()
 
@@ -125,7 +125,7 @@ class TestAuditMode:
         with patch("shutil.which", return_value="/usr/bin/igir"):
             from emupipeline.steps.step_rom_manager import RomManager
             rm = RomManager(mode=ExecutionMode.AUDIT, audit=None)
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run") as mock_run:
+            with patch("emupipeline.core.processor.subprocess.run") as mock_run:
                 rm.run()  # não deve levantar exceção
                 mock_run.assert_not_called()
 
@@ -144,7 +144,7 @@ class TestNormalMode:
             mock_result = MagicMock()
             mock_result.returncode = returncode
             mock_result.stderr = ""
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        return_value=mock_result) as mock_run:
                 rm.run()
                 return rm, mock_run
@@ -168,7 +168,7 @@ class TestNormalMode:
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager()
             mock_result = MagicMock(returncode=0, stderr="")
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        return_value=mock_result) as mock_run:
                 rm.run()
 
@@ -182,7 +182,7 @@ class TestNormalMode:
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager()
             mock_result = MagicMock(returncode=0, stderr="")
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        return_value=mock_result) as mock_run:
                 rm.run()
 
@@ -195,11 +195,11 @@ class TestNormalMode:
 
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager()
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        side_effect=subprocess.TimeoutExpired("igir", 7200)):
                 rm.run()
 
-        assert rm.get_stats().get("timeout") == 1
+        assert rm.get_stats().get("error") == 1
 
     def test_file_not_found_in_subprocess_sets_error_stat(self, config_factory, tmp_project):
         """FileNotFoundError de subprocess (não do shutil.which) define stat error."""
@@ -208,7 +208,7 @@ class TestNormalMode:
 
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager()
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        side_effect=FileNotFoundError("igir")):
                 rm.run()
 
@@ -225,7 +225,7 @@ class TestNormalMode:
         with patch("shutil.which", return_value="/usr/bin/igir"):
             rm = RomManager()
             mock_result = MagicMock(returncode=0, stderr="")
-            with patch("emupipeline.steps.step_rom_manager.subprocess.run",
+            with patch("emupipeline.core.processor.subprocess.run",
                        return_value=mock_result) as mock_run:
                 rm.run()
 

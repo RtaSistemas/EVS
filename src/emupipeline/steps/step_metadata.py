@@ -10,13 +10,13 @@ from typing import Any, Optional
 
 from emupipeline.core.dat_manager import DatMaster
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
 
 @register
-class MetadataGenerator(BaseProcessor):
+class MetadataGenerator(WholeRunStep):
     meta = StepMeta(
         id="generate_metadata",
         menu_number=9,
@@ -36,13 +36,8 @@ class MetadataGenerator(BaseProcessor):
         super().__init__("MetadataGenerator", mode=mode, audit=audit)
         self._dat = dat
 
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
-
     def run(self, dat: Optional[DatMaster] = None, **kwargs: Any) -> None:
-        self._dat = dat or self._dat
-        if self._dat is None:
-            self.logger.error("DatMaster não fornecido.")
+        if not self._resolve_dat(dat):
             return
 
         roms_dir   = Path(str(self.config.get("paths", "output_roms")))
@@ -83,8 +78,7 @@ class MetadataGenerator(BaseProcessor):
             count += 1
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            if not self._require_audit():
                 return
             self._audit.record(
                 step=self.name, action="create_gamelist_xml",

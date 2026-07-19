@@ -12,13 +12,14 @@ Mudanças em relação à v4:
 from __future__ import annotations
 
 import os
+import subprocess
 import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from enum import Enum, auto
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
 from emupipeline.core.logger import setup_logger
@@ -44,7 +45,7 @@ class BaseProcessor(ABC):
         self,
         name: str,
         mode: ExecutionMode = ExecutionMode.NORMAL,
-        audit: Optional[AuditReport] = None,
+        audit: AuditReport | None = None,
     ) -> None:
         from emupipeline.core.config import cfg as _cfg
         self.name   = name
@@ -55,7 +56,7 @@ class BaseProcessor(ABC):
 
         self._stats: dict[str, int] = {}
         self._stats_lock = threading.Lock()
-        self._metrics: Optional[StepMetrics] = None
+        self._metrics: StepMetrics | None = None
 
     # ------------------------------------------------------------------
     # Atalhos de modo
@@ -102,7 +103,7 @@ class BaseProcessor(ABC):
             return dict(self._stats)
 
     @property
-    def last_metrics(self) -> Optional[StepMetrics]:
+    def last_metrics(self) -> StepMetrics | None:
         """Métricas da última execução de run_parallel()."""
         return self._metrics
 
@@ -113,7 +114,7 @@ class BaseProcessor(ABC):
     def scan(
         self,
         directory: str | Path,
-        extensions: Optional[set[str]] = None,
+        extensions: set[str] | None = None,
         recursive: bool = True,
     ) -> list[Path]:
         directory = Path(directory).resolve()
@@ -146,7 +147,7 @@ class BaseProcessor(ABC):
             return ProcessPoolExecutor(max_workers=safe)
         return ThreadPoolExecutor(max_workers=n)
 
-    def run_parallel(self, files: list[Path], threads: Optional[int] = None) -> None:
+    def run_parallel(self, files: list[Path], threads: int | None = None) -> None:
         if not files:
             self.logger.warning("Nenhum arquivo para processar.")
             return
@@ -194,3 +195,91 @@ class BaseProcessor(ABC):
         self.logger.info(f"--- {self.name} concluído em {elapsed:.2f}s ---")
         for k, v in sorted(stats.items()):
             self.logger.info(f"  {k:<22}: {v}")
+
+    # ------------------------------------------------------------------
+    # Helpers de ExecutionMode — eliminam boilerplate nos steps
+    # ------------------------------------------------------------------
+
+    def _require_audit(self) -> bool:
+        """Retorna False (com log de erro) se _audit não foi injetado."""
+        if self._audit is None:
+            self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            return False
+        return True
+
+    def _audit_record(self, action: str, source: str, **kwargs: object) -> str:
+        """Guard + record + retorno de status em uma chamada.
+        Retorna 'audit_recorded' ou 'error'."""
+        if not self._require_audit():
+            return "error"
+        self._audit.record(step=self.name, action=action, source=source, **kwargs)  # type: ignore[union-attr]
+        return "audit_recorded"
+
+    # ------------------------------------------------------------------
+    # Helpers de validação de entrada
+    # ------------------------------------------------------------------
+
+    def _resolve_dir(self, path: Any, label: str = "Diretório") -> Path | None:
+        """Retorna Path resolvido se existir; loga erro e retorna None caso contrário."""
+        if not path:
+            self.logger.error(f"{label} não configurado.")
+            return None
+        p = Path(str(path))
+        if not p.exists():
+            self.logger.error(f"{label} não encontrado: {p}")
+            return None
+        return p
+
+    def _resolve_dat(self, dat: object | None) -> bool:
+        """Mescla 'dat' com self._dat; retorna True se disponível, False caso contrário."""
+        self._dat = dat or getattr(self, "_dat", None)  # type: ignore[assignment]
+        if self._dat is None:
+            self.logger.error("DatMaster não fornecido.")
+            return False
+        return True
+
+    def run_subprocess(
+        self,
+        cmd: list[str],
+        *,
+        timeout: int = 3600,
+        src_name: str = "",
+        dest: Path | None = None,
+        stderr_tail: int = 400,
+    ) -> bool:
+        """Executa cmd externo com tratamento padronizado de erros.
+
+        Retorna True em sucesso; False se returncode != 0, timeout ou binário ausente.
+        Em falha: loga o erro e remove 'dest' se existir.
+        """
+        try:
+            result = subprocess.run(
+                cmd, timeout=timeout, text=True, capture_output=True, check=False,
+            )
+            if result.returncode != 0:
+                self.logger.error(
+                    f"Comando falhou (código {result.returncode}) em {src_name}:\n"
+                    f"{result.stderr[-stderr_tail:]}"
+                )
+                if dest and dest.exists():
+                    dest.unlink()
+                return False
+            return True
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Timeout ao processar: {src_name}")
+            if dest and dest.exists():
+                dest.unlink()
+            return False
+        except FileNotFoundError as exc:
+            self.logger.error(f"Binário não encontrado: {exc}")
+            return False
+
+
+class WholeRunStep(BaseProcessor):
+    """
+    Mixin para steps que operam sobre diretórios completos via run().
+    Não participam do pipeline de arquivos individuais.
+    """
+
+    def process_file(self, file_path: Path) -> str:
+        return "not_applicable"

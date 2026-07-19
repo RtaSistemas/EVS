@@ -28,12 +28,11 @@ compress:
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
@@ -59,7 +58,7 @@ _SYSTEM_MAP: dict[str, tuple[str, list[str]]] = {
 
 
 @register
-class RomCompressor(BaseProcessor):
+class RomCompressor(WholeRunStep):
     meta = StepMeta(
         id="compress_roms",
         menu_number=12,
@@ -79,9 +78,6 @@ class RomCompressor(BaseProcessor):
     ) -> None:
         super().__init__("RomCompressor", mode=mode, audit=audit)
 
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
-
     def run(self, **kwargs: Any) -> None:
         compress_cfg    = self.config.get("compress")
         delete_original = getattr(compress_cfg, "delete_original",  False)
@@ -93,9 +89,8 @@ class RomCompressor(BaseProcessor):
         rvz_level       = int(getattr(compress_cfg, "rvz_level",    5))
         psp_format      = str(getattr(compress_cfg, "psp_format",   "cso"))
 
-        input_roms = Path(str(self.config.get("paths", "input_roms")))
-        if not input_roms.exists():
-            self.logger.error(f"Diretório de ROMs não encontrado: {input_roms}")
+        input_roms = self._resolve_dir(self.config.get("paths", "input_roms"), "Diretório de ROMs")
+        if input_roms is None:
             return
 
         # Verifica quais binários estão disponíveis
@@ -144,11 +139,7 @@ class RomCompressor(BaseProcessor):
                     continue
 
                 if self._mode == ExecutionMode.AUDIT:
-                    if self._audit is None:
-                        self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                        return
-                    self._audit.record(
-                        step=self.name,
+                    self._audit_record(
                         action=f"compress_{fmt}",
                         source=str(rom_file),
                         dest=str(dest),
@@ -201,36 +192,12 @@ class RomCompressor(BaseProcessor):
         psp_format: str,
     ) -> bool:
         """Chama a ferramenta de compressão. Retorna True em caso de sucesso."""
-        try:
-            cmd = self._build_cmd(fmt, src, dest, bin_path, rvz_compression, rvz_level, psp_format)
-            if cmd is None:
-                return False
+        cmd = self._build_cmd(fmt, src, dest, bin_path, rvz_compression, rvz_level, psp_format)
+        if cmd is None:
+            return False
 
-            self.logger.info(f"Comprimindo [{fmt.upper()}]: {src.name} → {dest.name}")
-            result = subprocess.run(
-                cmd, timeout=3600, text=True, capture_output=True,
-            )
-            if result.returncode != 0:
-                self.logger.error(
-                    f"Falha ao comprimir {src.name} (código {result.returncode}):\n"
-                    f"{result.stderr[-400:]}"
-                )
-                if dest.exists():
-                    dest.unlink()
-                return False
-            return True
-
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout ao comprimir: {src.name}")
-            if dest.exists():
-                dest.unlink()
-            return False
-        except FileNotFoundError as exc:
-            self.logger.error(f"Binário não encontrado durante execução: {exc}")
-            return False
-        except Exception as exc:
-            self.logger.error(f"Erro inesperado ao comprimir {src.name}: {exc}")
-            return False
+        self.logger.info(f"Comprimindo [{fmt.upper()}]: {src.name} → {dest.name}")
+        return self.run_subprocess(cmd, timeout=3600, src_name=src.name, dest=dest)
 
     def _build_cmd(
         self,

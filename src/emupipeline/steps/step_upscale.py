@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import BaseProcessor, WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
 
 @register
-class Upscaler(BaseProcessor):
+class Upscaler(WholeRunStep):
     meta = StepMeta(
         id="upscale_images",
         menu_number=7,
@@ -31,9 +31,6 @@ class Upscaler(BaseProcessor):
         audit: Optional[AuditReport] = None,
     ) -> None:
         super().__init__("Upscaler", mode=mode, audit=audit)
-
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
         up_cfg = self.config.get("upscale")
@@ -54,19 +51,18 @@ class Upscaler(BaseProcessor):
             self.logger.error(f"Configure paths.{bin_attr} no config.yaml")
             return
 
-        src_dir = self.config.get("paths", "upscale_input")
+        src_dir = self._resolve_dir(self.config.get("paths", "upscale_input"), "Diretório de entrada (upscale_input)")
         out_dir = self.config.get("paths", "upscale_output")
         scale   = getattr(up_cfg, "scale",         2)
         workers = getattr(up_cfg, "workers",        2)
         fmt     = getattr(up_cfg, "output_format", "webp")
         post    = getattr(up_cfg, "post_process",  True)
 
-        if not src_dir or not Path(str(src_dir)).exists():
-            self.logger.error(f"Diretório de entrada não encontrado: {src_dir}")
+        if src_dir is None:
             return
 
         images = [
-            p for p in Path(str(src_dir)).rglob("*")
+            p for p in src_dir.rglob("*")
             if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
             and not str(p).startswith(str(out_dir))
         ]
@@ -76,8 +72,7 @@ class Upscaler(BaseProcessor):
             return
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
+            if not self._require_audit():
                 return
             for img in images:
                 self._audit.record(

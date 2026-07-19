@@ -6,18 +6,17 @@ Herda BaseProcessor (arquitetura consistente).
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from emupipeline.core.execution_mode import AuditReport, ExecutionMode
-from emupipeline.core.processor import BaseProcessor
+from emupipeline.core.processor import WholeRunStep
 from emupipeline.core.registry import register
 from emupipeline.core.step_interface import StepMeta
 
 
 @register
-class RomManager(BaseProcessor):
+class RomManager(WholeRunStep):
     meta = StepMeta(
         id="rom_manager",
         menu_number=2,
@@ -30,12 +29,9 @@ class RomManager(BaseProcessor):
     def __init__(
         self,
         mode: ExecutionMode = ExecutionMode.NORMAL,
-        audit: Optional[AuditReport] = None,
+        audit: AuditReport | None = None,
     ) -> None:
         super().__init__("RomManager", mode=mode, audit=audit)
-
-    def process_file(self, file_path: Path) -> str:
-        return "not_applicable"
 
     def run(self, **kwargs: Any) -> None:
         if not shutil.which("igir"):
@@ -70,11 +66,8 @@ class RomManager(BaseProcessor):
         ]
 
         if self._mode == ExecutionMode.AUDIT:
-            if self._audit is None:
-                self.logger.error("AUDIT mode requer AuditReport injetado no construtor.")
-                return
-            self._audit.record(
-                step=self.name, action="run_igir",
+            self._audit_record(
+                action="run_igir",
                 source=dat_source, dest=output_roms,
                 reason=f"merge={merge_mode} regions={regions}",
             )
@@ -85,17 +78,9 @@ class RomManager(BaseProcessor):
             return
 
         self.logger.info(f"Executando IGIR: {' '.join(cmd[:4])} …")
-        try:
-            result = subprocess.run(cmd, timeout=7200, text=True, capture_output=True)
-            if result.returncode == 0:
-                self.logger.info("IGIR concluído com sucesso.")
-                self.update_stat("success")
-            else:
-                self.logger.error(f"IGIR falhou (código {result.returncode}):\n{result.stderr[-500:]}")
-                self.update_stat("error")
-        except subprocess.TimeoutExpired:
-            self.logger.error("IGIR timeout após 2 horas.")
-            self.update_stat("timeout")
-        except FileNotFoundError:
-            self.logger.error("igir não encontrado. Instale: npm install -g igir")
+        success = self.run_subprocess(cmd, timeout=7200, src_name="igir", stderr_tail=500)
+        if success:
+            self.logger.info("IGIR concluído com sucesso.")
+            self.update_stat("success")
+        else:
             self.update_stat("error")
