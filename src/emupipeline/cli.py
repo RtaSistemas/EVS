@@ -81,6 +81,7 @@ def _run_pipeline(
     mode=None,
     audit=None,
     stop_on_error: bool = True,
+    skip_steps: set[int] | None = None,
 ) -> None:
     """Pipeline programático sem prompts interativos (para uso em testes e scripts)."""
     from emupipeline.core.execution_mode import ExecutionMode as _EM
@@ -94,6 +95,8 @@ def _run_pipeline(
     autodiscover()
     log = setup_logger("Pipeline")
     pipeline_steps = get_pipeline_steps()
+    if skip_steps:
+        pipeline_steps = [c for c in pipeline_steps if c.meta.menu_number not in skip_steps]
     collector = MetricsCollector()
 
     for cls in pipeline_steps:
@@ -220,21 +223,32 @@ def parse_args() -> argparse.Namespace:
         prog="emupipeline",
         description="EmuPipeline v5 — Gerenciador de biblioteca de emulação",
     )
-    parser.add_argument("--pipeline",  action="store_true",
+    parser.add_argument("--pipeline",    action="store_true",
                         help="Executa pipeline completo sem menu")
-    parser.add_argument("--step",      metavar="NUM", type=int,
+    parser.add_argument("--step",        metavar="NUM", type=int,
                         help="Executa step pelo número do menu")
-    parser.add_argument("--dry-run",   action="store_true",
+    parser.add_argument("--dry-run",     action="store_true",
                         help="Simula sem modificar arquivos")
-    parser.add_argument("--audit",     action="store_true",
+    parser.add_argument("--audit",       action="store_true",
                         help="Gera relatório de operações sem modificar disco")
-    parser.add_argument("--config",    metavar="PATH",
+    parser.add_argument("--config",      metavar="PATH",
                         help="Caminho alternativo para config.yaml")
-    parser.add_argument("--tui",       action="store_true",
+    parser.add_argument("--tui",         action="store_true",
                         help="Abre interface gráfica no terminal (requer: pip install emupipeline[tui])")
-    parser.add_argument("--check-env", action="store_true",
+    parser.add_argument("--check-env",   action="store_true",
                         help="Verifica dependências e sai")
-    parser.add_argument("--version",   action="version",
+    parser.add_argument("--list-steps",  action="store_true",
+                        help="Lista todos os steps registrados e sai")
+    parser.add_argument("--threads",     metavar="N", type=int,
+                        help="Sobrescreve global.threads do config em tempo de execução")
+    parser.add_argument("--skip",        metavar="NUM[,NUM...]",
+                        help="Números de menu dos steps a pular no pipeline (ex: 3,7)")
+    err_group = parser.add_mutually_exclusive_group()
+    err_group.add_argument("--stop-on-error",     action="store_true", default=True,
+                           help="Interrompe o pipeline no primeiro erro (padrão)")
+    err_group.add_argument("--continue-on-error", action="store_true",
+                           help="Continua o pipeline mesmo após erros em steps")
+    parser.add_argument("--version",     action="version",
                         version="%(prog)s 5.0.0")
     return parser.parse_args()
 
@@ -266,6 +280,27 @@ def main() -> None:
         from emupipeline.core.logger import setup_logger
         setup_logger("CLI").warning(f"Modo {label} ativado.")
 
+    # --threads: sobrescreve global.threads após carregamento do config
+    if args.threads:
+        from emupipeline.core.config import cfg
+        try:
+            cfg.get("global").threads = args.threads
+        except (AttributeError, TypeError):
+            pass  # Pydantic frozen ou _NS sem setter — ignora silenciosamente
+
+    # --list-steps: imprime registry e sai
+    if args.list_steps:
+        from emupipeline.core.registry import autodiscover, get_all_steps
+        autodiscover()
+        steps = sorted(get_all_steps().values(), key=lambda c: c.meta.menu_number)
+        w = 52
+        print(f"\n{'#':>4}  {'ID':<22} {'Grupo':<22} {'Pipeline':>8}  Label")
+        print("─" * (w + 30))
+        for cls in steps:
+            order = str(cls.meta.pipeline_order) if cls.meta.pipeline_order < 999 else "—"
+            print(f"{cls.meta.menu_number:>4}  {cls.meta.id:<22} {cls.meta.group:<22} {order:>8}  {cls.meta.label}")
+        raise SystemExit(0)
+
     # Verifica ambiente e sai
     if hasattr(args, "check_env") and args.check_env:
         from emupipeline.core.config import cfg
@@ -286,7 +321,9 @@ def main() -> None:
             launch_tui(mode=("dry-run" if args.dry_run else
                              "audit"   if args.audit   else "normal"))
         elif args.pipeline:
-            run_full_pipeline(mode, audit)
+            skip = {int(n) for n in args.skip.split(",") if n.strip()} if args.skip else None
+            stop = not args.continue_on_error
+            _run_pipeline(mode=mode, audit=audit, stop_on_error=stop, skip_steps=skip)
         elif args.step is not None:
             _run_step_by_number(args.step, mode, audit)
         else:

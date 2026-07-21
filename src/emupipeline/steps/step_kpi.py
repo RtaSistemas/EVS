@@ -48,6 +48,7 @@ class KpiReporter(WholeRunStep):
         super().__init__("KpiReporter", mode=mode, audit=audit)
 
     def run(self, **kwargs: Any) -> None:
+        self._start_step_metrics()
         targets = {
             "ROMs (entrada)":    self.config.get("paths", "input_roms"),
             "ROMs (saída)":      self.config.get("paths", "output_roms"),
@@ -96,6 +97,7 @@ class KpiReporter(WholeRunStep):
             self.logger.info(f"KPI salvo em: {csv_path}")
 
         self.update_stat("directories_analyzed", len(rows))
+        self._finish_step_metrics()
 
     def _log_table(self, rows: list[tuple[str, int, float]]) -> None:
         sep = "─" * 55

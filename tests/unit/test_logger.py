@@ -78,12 +78,17 @@ class TestJsonFormatter:
         assert "boom" in data["exc"]
 
     def test_format_skips_absent_optional_fields(self):
-        from emupipeline.core.logger import JsonFormatter
+        from emupipeline.core import logger as logger_mod
+        from emupipeline.core.logger import JsonFormatter, reset_run_id
+        reset_run_id()
         fmt = JsonFormatter()
         record = self._make_record()
         result = fmt.format(record)
         data = json.loads(result)
-        for field in ("step", "file", "duration_s", "stats", "run_id"):
+        # run_id é gerado automaticamente ao primeiro log estruturado — deve existir
+        assert "run_id" in data
+        # campos opcionais que dependem de atributos no record não devem estar presentes
+        for field in ("step", "file", "duration_s", "stats"):
             assert field not in data
 
 

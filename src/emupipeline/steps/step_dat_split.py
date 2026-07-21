@@ -44,6 +44,7 @@ class DatSplitter(WholeRunStep):
         super().__init__("DatSplitter", mode=mode, audit=audit)
 
     def run(self, **kwargs: Any) -> None:
+        self._start_step_metrics()
         dat_path = self.config.get("paths", "dat_file")
         out_dir  = self.config.get("paths", "output_dats")
         roms_cfg = self.config.get("roms")
@@ -142,6 +143,7 @@ class DatSplitter(WholeRunStep):
             txn.commit()
 
         self.logger.info(f"DATs gerados em: {out_dir}")
+        self._finish_step_metrics()
 
     @staticmethod
     def _write_dat(

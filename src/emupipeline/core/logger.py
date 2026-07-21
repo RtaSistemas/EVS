@@ -13,22 +13,44 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+# Correlation ID gerado lazily na primeira emissão de log estruturado
+_RUN_ID: str = ""
+
+
+def new_run_id() -> str:
+    """Gera e armazena um novo UUID4 como run_id. Chame no início do pipeline."""
+    global _RUN_ID
+    _RUN_ID = str(uuid.uuid4())
+    return _RUN_ID
+
+
+def reset_run_id() -> None:
+    """Limpa o run_id atual (útil em testes para isolar execuções)."""
+    global _RUN_ID
+    _RUN_ID = ""
 
 
 class JsonFormatter(logging.Formatter):
     """Uma linha JSON por evento — ingestível por ELK/Grafana/Loki."""
 
     def format(self, record: logging.LogRecord) -> str:
+        global _RUN_ID
+        if not _RUN_ID:
+            _RUN_ID = str(uuid.uuid4())
+
         data: dict = {
             "ts":     self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "level":  record.levelname,
             "logger": record.name,
             "msg":    record.getMessage(),
             "thread": record.thread,
+            "run_id": _RUN_ID,
         }
-        for field in ("step", "file", "duration_s", "stats", "run_id"):
+        for field in ("step", "file", "duration_s", "stats"):
             if hasattr(record, field):
                 data[field] = getattr(record, field)
         if record.exc_info:

@@ -570,3 +570,28 @@ class TestDeleteOriginals:
         cue_file = tmp_path / "game.cue"
         cue_file.write_text('FILE "missing.bin" BINARY\n')
         rc._delete_originals(cue_file)  # não deve levantar exceção
+
+    def test_gdi_deletes_track_companions(self, config_factory, tmp_path):
+        rc = self._rc(config_factory)
+        track1 = tmp_path / "track01.bin"
+        track2 = tmp_path / "track02.raw"
+        track1.write_bytes(b"\x00" * 32)
+        track2.write_bytes(b"\x00" * 32)
+        gdi_file = tmp_path / "game.gdi"
+        gdi_file.write_text(
+            "2\n"
+            f"1 0 4 2048 track01.bin 0\n"
+            f"2 300 0 2048 track02.raw 0\n"
+        )
+        rc._delete_originals(gdi_file)
+        assert not gdi_file.exists()
+        assert not track1.exists()
+        assert not track2.exists()
+
+    def test_oserror_on_unlink_logs_warning(self, config_factory, tmp_path):
+        rc = self._rc(config_factory)
+        iso = tmp_path / "game.iso"
+        _make_iso(iso)
+
+        with patch.object(iso.__class__, "unlink", side_effect=OSError("locked")):
+            rc._delete_originals(iso)  # não deve levantar exceção

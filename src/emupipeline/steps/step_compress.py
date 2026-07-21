@@ -79,6 +79,7 @@ class RomCompressor(WholeRunStep):
         super().__init__("RomCompressor", mode=mode, audit=audit)
 
     def run(self, **kwargs: Any) -> None:
+        self._start_step_metrics()
         compress_cfg    = self.config.get("compress")
         delete_original = getattr(compress_cfg, "delete_original",  False)
         output_dir_raw  = str(getattr(compress_cfg, "output_dir",   ""))
@@ -176,6 +177,7 @@ class RomCompressor(WholeRunStep):
 
         compressed = self.get_stats().get("compressed", 0)
         self.logger.info(f"ROMs comprimidas: {compressed}")
+        self._finish_step_metrics()
 
     # ------------------------------------------------------------------
     # Helpers

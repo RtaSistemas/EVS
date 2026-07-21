@@ -34,6 +34,7 @@ class RomManager(WholeRunStep):
         super().__init__("RomManager", mode=mode, audit=audit)
 
     def run(self, **kwargs: Any) -> None:
+        self._start_step_metrics()
         if not shutil.which("igir"):
             self.logger.error("igir não encontrado no PATH. Instale: npm install -g igir")
             return
@@ -84,3 +85,4 @@ class RomManager(WholeRunStep):
             self.update_stat("success")
         else:
             self.update_stat("error")
+        self._finish_step_metrics()

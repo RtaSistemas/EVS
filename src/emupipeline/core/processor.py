@@ -246,33 +246,66 @@ class BaseProcessor(ABC):
         src_name: str = "",
         dest: Path | None = None,
         stderr_tail: int = 400,
+        retries: int = 0,
     ) -> bool:
-        """Executa cmd externo com tratamento padronizado de erros.
+        """Executa cmd externo com tratamento padronizado de erros e retry opcional.
 
-        Retorna True em sucesso; False se returncode != 0, timeout ou binário ausente.
-        Em falha: loga o erro e remove 'dest' se existir.
+        retries=0 (padrão): comportamento original sem retry.
+        retries=N: tenta até N+1 vezes com back-off exponencial (2^attempt s).
+        FileNotFoundError nunca é retentado (binário ausente = falha permanente).
+        Retorna True em sucesso; False se todas as tentativas falharem.
         """
-        try:
-            result = subprocess.run(
-                cmd, timeout=timeout, text=True, capture_output=True, check=False,
-            )
-            if result.returncode != 0:
+        for attempt in range(retries + 1):
+            try:
+                result = subprocess.run(
+                    cmd, timeout=timeout, text=True, capture_output=True, check=False,
+                )
+                if result.returncode == 0:
+                    return True
                 self.logger.error(
                     f"Comando falhou (código {result.returncode}) em {src_name}:\n"
                     f"{result.stderr[-stderr_tail:]}"
                 )
                 if dest and dest.exists():
                     dest.unlink()
-                return False
-            return True
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout ao processar: {src_name}")
-            if dest and dest.exists():
-                dest.unlink()
-            return False
-        except FileNotFoundError as exc:
-            self.logger.error(f"Binário não encontrado: {exc}")
-            return False
+            except subprocess.TimeoutExpired:
+                self.logger.error(f"Timeout ao processar: {src_name}")
+                if dest and dest.exists():
+                    dest.unlink()
+            except FileNotFoundError as exc:
+                self.logger.error(f"Binário não encontrado: {exc}")
+                return False  # falha permanente — sem retry
+
+            if attempt < retries:
+                wait = 2 ** attempt
+                self.logger.info(
+                    f"Tentativa {attempt + 1}/{retries + 1} falhou em {src_name}. "
+                    f"Aguardando {wait}s…"
+                )
+                time.sleep(wait)
+
+        return False
+
+    # ------------------------------------------------------------------
+    # Helpers de métricas para WholeRunStep
+    # ------------------------------------------------------------------
+
+    def _start_step_metrics(self, files_total: int = 1) -> None:
+        """Inicializa StepMetrics para steps que não usam run_parallel()."""
+        self._metrics = StepMetrics(step_name=self.name, files_total=files_total)
+
+    def _finish_step_metrics(self) -> None:
+        """Finaliza e preenche StepMetrics após run() de um WholeRunStep."""
+        if self._metrics is None:
+            return
+        stats = self.get_stats()
+        self._metrics.files_processed = sum(
+            v for k, v in stats.items()
+            if k in ("processed", "compressed", "converted", "success", "dats_created")
+        )
+        self._metrics.files_skipped = sum(v for k, v in stats.items() if "skip" in k)
+        self._metrics.files_error   = stats.get("error", 0)
+        self._metrics.finish()
 
 
 class WholeRunStep(BaseProcessor):
