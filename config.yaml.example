@@ -286,3 +286,25 @@ ports:
     ESYNC: "1"
     FSYNC: "1"
     # DXVK_HUD: "fps,frametime"   # descomente para debug de performance
+
+# ---------------------------------------------------------------------------
+# COMPRESS — step_compress (CHD / RVZ / CSO)
+# ---------------------------------------------------------------------------
+compress:
+  # Apagar o arquivo original após compressão bem-sucedida? Irreversível.
+  delete_original: false
+
+  # "" = grava ao lado do original; caminho = diretório separado
+  output_dir: ""
+
+  # Binários (nome no PATH ou caminho absoluto)
+  chdman_bin:  "chdman"
+  dolphin_bin: "DolphinTool"
+  maxcso_bin:  "maxcso"
+
+  # GameCube / Wii (RVZ): zstd | bzip2 | lzma | lzma2 | none
+  rvz_compression: "zstd"
+  rvz_level: 5          # 1-9
+
+  # PSP: cso | zso
+  psp_format: "cso"

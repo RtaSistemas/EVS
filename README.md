@@ -1,417 +1,596 @@
-# EmuPipeline v5.0
+# EmuPipeline
 
-> **Pipeline Python 3.10+ modular para padronização, organização e otimização de bibliotecas de emulação**
-> Plataforma alvo: Bazzite / Linux · EmuDeck · Steam Deck · FBNeo / MAME Arcade
+**EmuPipeline cleans up and prepares your retro game library.** It puts ROMs in order, matches game pictures to the correct games, makes images and videos smaller, and writes the list file that your game menu needs.
 
 [![CI](https://github.com/rtasistemas/evs/actions/workflows/ci.yml/badge.svg)](https://github.com/rtasistemas/evs/actions)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Steps](https://img.shields.io/badge/pipeline%20steps-12-green)](#6-steps-do-pipeline)
-[![Tests](https://img.shields.io/badge/testes-170%2B-brightgreen)](#10-testes)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](pyproject.toml)
+
+Version 5.0 · Linux (made for Bazzite, EmuDeck, and Steam Deck) · FBNeo and MAME arcade sets
 
 ---
 
-## Índice
+## Contents
 
-1. [Visão Geral](#1-visão-geral)
-2. [Arquitetura do Sistema](#2-arquitetura-do-sistema)
-3. [Fluxo do Pipeline](#3-fluxo-do-pipeline)
-4. [Requisitos e Instalação](#4-requisitos-e-instalação)
-5. [Configuração — config.yaml](#5-configuração--configyaml)
-6. [Steps do Pipeline](#6-steps-do-pipeline)
-7. [Módulos Core](#7-módulos-core)
-8. [Modos de Execução](#8-modos-de-execução)
-9. [CLI — Interface de Linha de Comando](#9-cli--interface-de-linha-de-comando)
-10. [Testes](#10-testes)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Glossário](#12-glossário)
+1. [What EmuPipeline does](#1-what-emupipeline-does)
+2. [Words you must know](#2-words-you-must-know)
+3. [Quick start](#3-quick-start)
+4. [Install](#4-install)
+5. [Prepare your folders](#5-prepare-your-folders)
+6. [How the pipeline works](#6-how-the-pipeline-works)
+7. [The steps in detail](#7-the-steps-in-detail)
+8. [Safe modes: dry run and audit](#8-safe-modes-dry-run-and-audit)
+9. [Command line](#9-command-line)
+10. [Text interface (TUI)](#10-text-interface-tui)
+11. [Configuration reference](#11-configuration-reference)
+12. [Output files and logs](#12-output-files-and-logs)
+13. [Troubleshooting](#13-troubleshooting)
+14. [For developers](#14-for-developers)
+15. [Glossary](#15-glossary)
 
 ---
 
-## 1. Visão Geral
+## 1. What EmuPipeline does
 
-O **EmuPipeline** automatiza todas as etapas para montar uma biblioteca de emulação organizada, padronizada e otimizada — do DAT XML bruto até o `gamelist.xml` pronto para o EmulationStation.
+You can have thousands of game files. They have different names. They are in different folders. Some files are too large. Some pictures have no game.
 
-### O problema que resolve
+EmuPipeline does this work for you. You start it one time. It does each task in the correct order.
 
-```
-ANTES                              DEPOIS
-─────────────────────────          ─────────────────────────────────
-ROMs espalhadas sem padrão    →    ROMs organizadas por driver/sistema
-Imagens com nomes variados    →    Imagens renomeadas e linkadas ao ROM
-PNGs pesados e lentos         →    WebP otimizado (≈70% menor)
-Vídeos sem codec padrão       →    H.265/H.264 com smart-skip
-Sem gamelist.xml              →    gamelist.xml para EmulationStation
-Launchers de ports manuais    →    .desktop automático com gamemode/wine
-```
-
-### Capacidades principais
-
-| Capacidade | Tecnologia |
+| Before | After |
 |---|---|
-| Organização de ROMs | IGIR + DAT XML |
-| Match de imagens | Fuzzy search (bigram + SequenceMatcher) |
-| Conversão de imagens | Pillow (ProcessPool — bypassa GIL) |
-| Upscaling | waifu2x / Real-ESRGAN + ImageMagick |
-| Otimização de vídeo | ffmpeg + ffprobe smart-skip |
-| Metadados | gamelist.xml EmulationStation |
-| Ports/Launchers | .desktop + autorun.sh (Linux/Wine) |
-| Execução segura | DRY_RUN / AUDIT sem I/O real |
-| Atomicidade | StagingTransaction (sem arquivos corrompidos) |
+| ROMs are in no special order | ROMs are sorted and named correctly |
+| Pictures have random names | Each picture is linked to its game |
+| PNG pictures are large | WebP pictures are about 70% smaller |
+| Videos use different codecs | Videos use H.265 (small and good quality) |
+| No game list exists | A `gamelist.xml` file exists for EmulationStation |
+| Ports have no launcher | Each port has a `.desktop` launcher |
 
----
+### Who needs this tool
 
-## 2. Arquitetura do Sistema
+Use EmuPipeline if you:
 
-### 2.1 Visão de camadas
+- keep a large arcade or console ROM library;
+- use EmulationStation, EmuDeck, or a Steam Deck;
+- want one repeatable process, not many manual tasks.
 
-```mermaid
-graph TB
-    subgraph CLI["🖥️  CLI (cli.py)"]
-        MENU[Menu Interativo]
-        PIPE[Pipeline Automático]
-        ARGS[Argumentos --config / --dry-run / --audit]
-    end
+### Safety
 
-    subgraph REGISTRY["📦  Registry (registry.py)"]
-        AUTO[Auto-discovery pkgutil]
-        PLUG[Plugin entry_points]
-        DEC["@register decorator"]
-    end
-
-    subgraph STEPS["🔧  Steps (12 módulos)"]
-        direction LR
-        S1[DatSplitter]
-        S2[RomManager]
-        S3[ImageOrganizer]
-        S4[WebPConverter]
-        S5[VideoOptimizer]
-        S6[MetadataGenerator]
-        S7[KpiReporter]
-        S8[Upscaler]
-        S9[PortsAutomator]
-        S10[RomValidator]
-        S11[FolderComparator]
-        S12[OriginalCleaner]
-    end
-
-    subgraph CORE["⚙️  Core Modules"]
-        CFG[ConfigLoader\nSingleton + Pydantic]
-        DAT[DatMaster\nParser + Fuzzy Index]
-        PROC[BaseProcessor\nThreadPool / ProcessPool]
-        MODE[ExecutionMode\nNORMAL / DRY_RUN / AUDIT]
-        TXN[StagingTransaction\nAtomic writes]
-        AUDIT[AuditReport\nThread-safe log]
-        ENV[EnvironmentChecker\nDependency validator]
-    end
-
-    CLI --> REGISTRY
-    REGISTRY --> STEPS
-    STEPS --> CORE
-    PROC --> TXN
-    MODE --> AUDIT
-
-    style CLI fill:#1a1a2e,color:#e0e0e0,stroke:#4a90d9
-    style REGISTRY fill:#16213e,color:#e0e0e0,stroke:#4a90d9
-    style STEPS fill:#0f3460,color:#e0e0e0,stroke:#4a90d9
-    style CORE fill:#533483,color:#e0e0e0,stroke:#9b59b6
-```
-
-### 2.2 Diagrama de classes principal
-
-```mermaid
-classDiagram
-    class StepProtocol {
-        <<Protocol>>
-        +meta: StepMeta
-        +run(**kwargs) None
-        +get_stats() dict
-    }
-
-    class StepMeta {
-        +id: str
-        +menu_number: int
-        +label: str
-        +group: str
-        +description: str
-        +requires_dat: bool
-        +pipeline_order: int
-    }
-
-    class BaseProcessor {
-        <<Abstract>>
-        +name: str
-        +config: ConfigLoader
-        +_mode: ExecutionMode
-        +_audit: AuditReport
-        +_stats: dict
-        +run_parallel(files, threads)
-        +scan(dir, extensions) list
-        +update_stat(key, delta)
-        +get_stats() dict
-        +process_file(Path)* str
-    }
-
-    class ExecutionMode {
-        <<Enum>>
-        NORMAL
-        DRY_RUN
-        AUDIT
-    }
-
-    class ConfigLoader {
-        <<Singleton>>
-        -_instance: ConfigLoader
-        +base_dir: Path
-        +get(section, key, default) Any
-        -_find_config() Path
-        -_load() None
-    }
-
-    class DatMaster {
-        -rom_map: dict
-        -title_map: dict
-        -_bigrams: dict
-        +search(filename, threshold) GameInfo
-        +normalize_string(s) str
-    }
-
-    class AuditReport {
-        -_entries: list
-        -_lock: Lock
-        +record(step, action, ...) None
-        +export_json() str
-        +export_html() str
-        +destructive_count: int
-    }
-
-    class StagingTransaction {
-        -_tmp_dir: Path
-        -_ops: list
-        +stage(content, dest)
-        +commit()
-        +rollback()
-    }
-
-    BaseProcessor ..|> StepProtocol
-    BaseProcessor --> ConfigLoader
-    BaseProcessor --> ExecutionMode
-    BaseProcessor --> AuditReport
-    BaseProcessor --> StagingTransaction
-    DatMaster --> StepProtocol : injetado via run(dat=)
-    StepMeta --> StepProtocol
-```
-
-### 2.3 Sistema de Registry e plugins
+EmuPipeline can delete files. Therefore it has two safe modes. In these modes, it does **not** change your files. Read [section 8](#8-safe-modes-dry-run-and-audit) before your first real run.
 
 ```mermaid
 flowchart LR
-    subgraph Registro
-        DEC["@register\ndecorator"]
-        REG[_REGISTRY\ndict interno]
-        EP["entry_points\n'emupipeline.steps'"]
-    end
-
-    subgraph Queries
-        GM[get_by_menu_number]
-        GA[get_all_steps]
-        GP[get_pipeline_steps\npipeline_order < 999]
-        GS[get_step by id]
-    end
-
-    subgraph Fontes
-        INT[Steps internos\npkgutil scan]
-        PLG[Plugins externos\npyproject.toml]
-    end
-
-    INT --> DEC --> REG
-    PLG --> EP --> REG
-    REG --> GM & GA & GP & GS
+    A["Your raw files<br/>ROMs, pictures, videos"] --> B["EmuPipeline"]
+    D["DAT file<br/>list of correct games"] --> B
+    B --> C["Sorted ROMs"]
+    B --> E["Linked WebP pictures"]
+    B --> F["Small videos"]
+    B --> G["gamelist.xml"]
+    B --> H["Reports and logs"]
 ```
 
 ---
 
-## 3. Fluxo do Pipeline
+## 2. Words you must know
 
-### 3.1 Pipeline automático (ordem de execução)
+You do not need earlier knowledge. These six words appear in the whole document.
 
-```mermaid
-flowchart TD
-    START([▶ Início do Pipeline]) --> ENV
+| Word | Meaning |
+|---|---|
+| **ROM** | A file that holds a game. Most are `.zip` files. |
+| **DAT file** | An XML file that lists every correct game and its checksum. FBNeo, MAME, and Redump publish them. |
+| **Driver** | The hardware that a game runs on, for example `cps1` or `neogeo`. The DAT file gives the driver. |
+| **Clone** | A game that is a copy of another game (the *parent*) with small changes. |
+| **Step** | One task in the pipeline, for example "convert pictures". There are 13 steps. |
+| **Pipeline** | A group of steps that run one after the other. |
 
-    ENV{{"🔍 EnvironmentChecker\nverifica dependências"}}
-    ENV -- "falha crítica" --> ABORT([❌ Abort])
-    ENV -- "OK" --> S10
-
-    S10["**Step 1** · pipeline_order=10\n🗂️ DatSplitter\nSplit do DAT mestre por driver\nAplica blacklist e filtro de clones"]
-    S10 --> S20
-
-    S20["**Step 2** · pipeline_order=20\n📦 RomManager\nChama IGIR para organizar ROMs\n(nonmerged / merged / split)"]
-    S20 --> S50
-
-    S50["**Step 5** · pipeline_order=50\n🖼️ ImageOrganizer\nFuzzy match imagens → DAT\nCria symlinks ou cópias"]
-    S50 --> S60
-
-    S60["**Step 6** · pipeline_order=60\n🔄 WebPConverter\nPNG/JPG → WebP via Pillow\nProcessPoolExecutor (GIL bypass)"]
-    S60 --> S80
-
-    S80["**Step 8** · pipeline_order=80\n🎬 VideoOptimizer\nffprobe smart-skip + ffmpeg H.265\nAtomic write por arquivo"]
-    S80 --> S90
-
-    S90["**Step 9** · pipeline_order=90\n📋 MetadataGenerator\ngamelist.xml EmulationStation\nCategoria do catver.ini"]
-    S90 --> S100
-
-    S100["**Step 10** · pipeline_order=100\n📊 KpiReporter\nContagem de arquivos + uso de disco\nExporta kpi.csv"]
-    S100 --> END
-
-    END([✅ Pipeline concluído])
-
-    style START fill:#27ae60,color:#fff
-    style END fill:#27ae60,color:#fff
-    style ABORT fill:#e74c3c,color:#fff
-    style ENV fill:#f39c12,color:#fff
-```
-
-### 3.2 Steps manuais (excluídos do pipeline automático)
-
-```mermaid
-flowchart LR
-    subgraph MANUAL["🔧 Steps pipeline_order = 999 (manuais)"]
-        V["**validate_roms**\nRomValidator\nCompara ROMs locais vs DAT\nGera relatórios missing/extra"]
-        C["**compare_folders**\nFolderComparator\nDiferença entre dois diretórios"]
-        U["**upscale_images**\nUpscaler\nwaifu2x / Real-ESRGAN\n+ ImageMagick unsharp"]
-        P["**ports_launchers**\nPortsAutomator\nLaunchers .desktop + autorun.sh\nLinux / Wine + gamemode"]
-        CL["**clean_originals**\nOriginalCleaner\nRemove PNG/JPG após confirmar WebP\n⚠️ Irreversível"]
-    end
-```
-
-### 3.3 Fluxo de dados de imagens
-
-```mermaid
-flowchart LR
-    RAW["🗂️ Imagens brutas\n*.png, *.jpg, *.\n(nomes variados)"]
-
-    subgraph MATCH["ImageOrganizer"]
-        E1{Extensão\nválida?}
-        E2{Match\nexato ROM?}
-        E3{Match\nexato título?}
-        E4{Fuzzy match\n≥ threshold?}
-        LINK["symlink relativo\nou cópia"]
-        MISS[unmatched_images.txt]
-    end
-
-    subgraph CONV["WebPConverter"]
-        PIL[Pillow encode\nqualidade configurável]
-        WEBP["*.webp\n(≈70% menor)"]
-    end
-
-    subgraph UP["Upscaler (opcional)"]
-        ENG{Engine}
-        W2X[waifu2x-ncnn-vulkan]
-        RESR[realesrgan-ncnn-vulkan]
-        MAGICK["ImageMagick\nunsharp mask"]
-        OUT2["upscaled/*.webp\n2x / 4x"]
-    end
-
-    RAW --> E1
-    E1 -- Sim --> E2
-    E1 -- Não --> SKIP[skipped_ext]
-    E2 -- Sim --> LINK
-    E2 -- Não --> E3
-    E3 -- Sim --> LINK
-    E3 -- Não --> E4
-    E4 -- Sim --> LINK
-    E4 -- Não --> MISS
-    LINK --> PIL --> WEBP
-    WEBP --> ENG
-    ENG -- waifu2x --> W2X --> MAGICK
-    ENG -- realesrgan --> RESR --> MAGICK
-    MAGICK --> OUT2
-```
-
-### 3.4 Fluxo de otimização de vídeo
-
-```mermaid
-flowchart TD
-    VIN["🎬 Vídeos de entrada\n*.mp4, *.avi, ..."]
-
-    PROBE["ffprobe\ndetecta codec atual"]
-
-    SKIP{smart_skip\nativado?}
-    CODEC{Já é\nh265/h264?}
-    ENCODE["ffmpeg\n-c:v libx265 -crf 28\n-preset fast\n-c:a copy"]
-    ATOMIC["StagingTransaction\natual → temp → replace"]
-    DONE["✅ Vídeo otimizado\nH.265 CRF 28"]
-    SKIPPED["⏭️ skipped_codec\n(já está correto)"]
-    DEL{delete_original?}
-    ORIG_DEL["🗑️ Remove original"]
-
-    VIN --> PROBE --> SKIP
-    SKIP -- Sim --> CODEC
-    SKIP -- Não --> ENCODE
-    CODEC -- Sim --> SKIPPED
-    CODEC -- Não --> ENCODE
-    ENCODE --> ATOMIC --> DONE --> DEL
-    DEL -- Sim --> ORIG_DEL
-    DEL -- Não --> FIM([fim])
-    ORIG_DEL --> FIM
-
-    style SKIPPED fill:#27ae60,color:#fff
-    style ORIG_DEL fill:#e74c3c,color:#fff
-```
+More terms are in the [glossary](#15-glossary).
 
 ---
 
-## 4. Requisitos e Instalação
+## 3. Quick start
 
-### 4.1 Dependências Python
+You need Python 3.10 or newer. Run these commands in a terminal.
 
 ```bash
-pip install emupipeline                  # mínimo
-pip install emupipeline[images]          # + Pillow (WebP)
-pip install emupipeline[validation]      # + Pydantic v2
-pip install emupipeline[kpi]             # + pandas, openpyxl
-pip install emupipeline[all]             # tudo
-```
-
-### 4.2 Ferramentas externas
-
-| Ferramenta | Versão mínima | Usado por | Obrigatório |
-|---|---|---|---|
-| Python | 3.10 | tudo | ✅ |
-| ffmpeg | qualquer | VideoOptimizer | apenas vídeo |
-| ffprobe | qualquer | VideoOptimizer smart-skip | apenas vídeo |
-| igir | 1.8+ | RomManager | apenas ROMs |
-| ImageMagick | 7+ (`magick`) | Upscaler pós-proc | opcional |
-| waifu2x-ncnn-vulkan | qualquer | Upscaler | opcional |
-| realesrgan-ncnn-vulkan | qualquer | Upscaler | opcional |
-
-### 4.3 Instalação rápida
-
-```bash
-# Clone
+# 1. Get the code
 git clone https://github.com/rtasistemas/evs.git
 cd evs
 
-# Instale em modo editável (desenvolvimento)
-pip install -e ".[all]"
+# 2. Install the program with all Python extras
+pip install -e ".[full]"
 
-# Copie e ajuste o config de exemplo
+# 3. Make your config file, then edit it
 cp config.yaml.example config.yaml
 $EDITOR config.yaml
 
-# Verifique o ambiente
+# 4. Check that all tools are installed
 emupipeline --check-env
 
-# Execute o pipeline completo
+# 5. Do a test run. This does not change any file.
+emupipeline --pipeline --dry-run
+
+# 6. Do the real run
 emupipeline --pipeline
 ```
 
+If you are not sure, run `emupipeline` with no options. A menu opens. Choose one step at a time.
+
 ---
 
-## 5. Configuração — config.yaml
+## 4. Install
 
-### 5.1 Estrutura de seções
+### 4.1 Python packages
+
+EmuPipeline needs only `pyyaml`. Other packages are optional. Use extras to add them.
+
+| Command | What it adds | Why you need it |
+|---|---|---|
+| `pip install emupipeline` | `pyyaml` only | Basic use |
+| `pip install "emupipeline[images]"` | Pillow | Convert pictures to WebP |
+| `pip install "emupipeline[validation]"` | Pydantic 2 | Full check of `config.yaml` |
+| `pip install "emupipeline[tui]"` | Textual | The text interface |
+| `pip install "emupipeline[full]"` | All of the above | Recommended |
+| `pip install -e ".[dev]"` | Test and lint tools | For developers |
+
+### 4.2 External programs
+
+Some steps call other programs. Install only the programs for the steps that you use.
+
+| Program | Used by step | Needed? | Install note |
+|---|---|---|---|
+| `igir` 1.8 or newer | Organize ROMs | If you use that step | `npm install -g igir` (needs Node.js 18+) |
+| `ffmpeg` and `ffprobe` | Optimize videos | If you use that step | `sudo dnf install ffmpeg` |
+| `chdman` | Compress ROMs (CHD) | If you use that step | Part of the MAME tools |
+| `DolphinTool` | Compress ROMs (RVZ) | If you use that step | Part of Dolphin |
+| `maxcso` | Compress ROMs (CSO) | If you use that step | Package `maxcso` |
+| `waifu2x-ncnn-vulkan` or `realesrgan-ncnn-vulkan` | Upscale pictures | If you use that step | Download from GitHub |
+| ImageMagick 7 (`magick`) | Upscale sharpening | Optional | `sudo dnf install ImageMagick` |
+| `wine`, `gamemoderun`, `mangohud` | Port launchers | Optional | Use your package manager |
+
+Run `emupipeline --check-env` to see which programs your computer has. The command shows a table and a hint for each missing program.
+
+---
+
+## 5. Prepare your folders
+
+EmuPipeline reads the paths from `config.yaml`. Paths that are not absolute start from `global.base_dir`.
+
+This is the layout in `config.yaml.example`:
+
+```text
+~/Documents/emupipeline/          <- global.base_dir
+├── dats/
+│   ├── FinalBurn Neo (...).dat   <- paths.dat_file
+│   └── catver.ini                <- paths.catver_ini (game categories)
+├── source/                       <- INPUT. EmuPipeline reads from here.
+│   ├── roms/                     <- paths.input_roms
+│   └── images/                   <- paths.input_imgs
+└── output/                       <- OUTPUT. EmuPipeline writes to here.
+    ├── roms/                     <- paths.output_roms
+    ├── images/                   <- paths.output_imgs
+    ├── dats_generated/           <- paths.output_dats
+    ├── reports/                  <- paths.output_reports
+    ├── logs/                     <- paths.output_logs
+    └── gamelist.xml              <- paths.output_xml
+```
+
+**Important:** Put the DAT file in place before you start. Three steps need it (validate ROMs, organize pictures, make `gamelist.xml`). Two more steps read it themselves (split DAT, organize ROMs).
+
+---
+
+## 6. How the pipeline works
+
+The automatic pipeline runs **8 steps**. They always run in this order.
+
+```mermaid
+flowchart TD
+    S([Start]) --> CHK{"Are all required<br/>tools installed?"}
+    CHK -- No --> STOP([Stop and show hints])
+    CHK -- Yes --> A
+
+    A["1. Split DAT<br/>order 10"] --> B["2. Organize ROMs<br/>order 20"]
+    B --> C["3. Compress ROMs<br/>order 25"]
+    C --> D["4. Organize pictures<br/>order 50"]
+    D --> E["5. Convert to WebP<br/>order 60"]
+    E --> F["6. Optimize videos<br/>order 80"]
+    F --> G["7. Make gamelist.xml<br/>order 90"]
+    G --> H["8. KPI report<br/>order 100"]
+    H --> Z([Done])
+
+    style S fill:#27ae60,color:#fff
+    style Z fill:#27ae60,color:#fff
+    style STOP fill:#e74c3c,color:#fff
+```
+
+Note: The environment check in this diagram runs when you choose **99** in the menu. The command `emupipeline --pipeline` does not run it. Run `emupipeline --check-env` yourself before `--pipeline`.
+
+### Manual steps
+
+Five more steps are **not** in the automatic pipeline. You start them yourself, because they take long, need extra programs, or delete data.
+
+```mermaid
+flowchart LR
+    subgraph MANUAL["Manual steps (pipeline order 999)"]
+        V["3. Validate ROMs<br/>find missing and extra games"]
+        C["4. Compare folders<br/>find common files"]
+        U["7. Upscale pictures<br/>neural network"]
+        P["11. Port launchers<br/>make .desktop files"]
+        X["14. Clean originals<br/>DELETES files"]
+    end
+```
+
+### What each step gives to the next step
+
+```mermaid
+flowchart LR
+    DAT["DAT file"] --> S1["Split DAT"]
+    S1 -->|"small DAT files<br/>one per driver"| S2["Organize ROMs"]
+    S2 -->|"sorted ROMs"| S3["Compress ROMs"]
+    IMG["Raw pictures"] --> S5["Organize pictures"]
+    DAT --> S5
+    S5 -->|"linked pictures"| S6["Convert to WebP"]
+    VID["Raw videos"] --> S8["Optimize videos"]
+    S3 --> S9["Make gamelist.xml"]
+    S6 --> S9
+    S8 --> S9
+    DAT --> S9
+    S9 -->|"gamelist.xml"| S10["KPI report"]
+```
+
+### What happens when a step fails
+
+| Command | Behavior |
+|---|---|
+| `emupipeline --pipeline` | Stops at the first error (default). |
+| `emupipeline --pipeline --continue-on-error` | Writes the error to the log and runs the next step. |
+| Menu option 99 | Asks you if it must continue. |
+
+---
+
+## 7. The steps in detail
+
+Each step has a **menu number**. Use it with `--step N`.
+
+| Menu # | Name | ID | In pipeline? | Needs DAT? | Group |
+|---|---|---|---|---|---|
+| 1 | Split DAT | `dat_split` | Yes (10) | No* | ROMs & DATs |
+| 2 | Organize ROMs | `rom_manager` | Yes (20) | No* | ROMs & DATs |
+| 3 | Validate ROMs | `validate_roms` | No | Yes | ROMs & DATs |
+| 4 | Compare folders | `compare_folders` | No | No | ROMs & DATs |
+| 5 | Organize pictures | `organize_images` | Yes (50) | Yes | Images |
+| 6 | Convert to WebP | `convert_webp` | Yes (60) | No | Images |
+| 7 | Upscale pictures | `upscale_images` | No | No | Images |
+| 8 | Optimize videos | `optimize_videos` | Yes (80) | No | Video & Metadata |
+| 9 | Make gamelist.xml | `generate_metadata` | Yes (90) | Yes | Video & Metadata |
+| 10 | KPI report | `kpi_report` | Yes (100) | No | Video & Metadata |
+| 11 | Port launchers | `ports_launchers` | No | No | Extras |
+| 12 | Compress ROMs | `compress_roms` | Yes (25) | No | ROMs & DATs |
+| 14 | Clean originals | `clean_originals` | No | No | Images |
+
+\* These steps read the DAT file themselves, from `paths.dat_file`.
+Menu number 13 is not in use.
+
+Run `emupipeline --list-steps` to see this table from your installed version.
+
+### 7.1 Split DAT (`dat_split`)
+
+**Goal:** Cut the large master DAT into small DAT files, one for each driver. Remove games that you do not want.
+
+**Input:** `paths.dat_file` · **Output:** `paths.output_dats`
+
+```mermaid
+flowchart TD
+    A["Read each game<br/>in the master DAT"] --> B{"Does the title contain<br/>a blacklist word?"}
+    B -- Yes --> X1["Remove it<br/>count: blacklisted"]
+    B -- No --> C{"Is it a clone and<br/>exclude_clones is true?"}
+    C -- Yes --> X2["Remove it<br/>count: clone_excluded"]
+    C -- No --> D{"split_by_driver<br/>is true?"}
+    D -- Yes --> E["Write one DAT<br/>for each driver"]
+    D -- No --> F["Write one DAT<br/>with all games"]
+```
+
+**Settings:** `roms.split_by_driver`, `roms.blacklist`, `roms.exclude_clones`, `roms.generate_bios_file`, `roms.combined_filename`.
+
+### 7.2 Organize ROMs (`rom_manager`)
+
+**Goal:** Check, rename, and sort your ROMs against the DAT files. This step calls the program **igir**.
+
+**Input:** `paths.input_roms` and the DAT files · **Output:** `paths.output_roms`
+
+The setting `roms.merge_mode` controls how clones are stored:
+
+| Mode | Meaning |
+|---|---|
+| `nonmerged` | Each ZIP file holds everything that the game needs. Uses more space. Easiest. **Recommended for EmuDeck.** |
+| `split` | A clone ZIP holds only the files that are different from its parent. |
+| `merged` | The parent and all clones are in one ZIP. |
+
+If `igir` is not installed, the step writes an error and stops. Set `roms.enable_igir: false` to skip it.
+
+### 7.3 Validate ROMs (`validate_roms`) — manual
+
+**Goal:** Tell you which games are missing from your collection and which files are not in the DAT.
+
+It compares the names of the `.zip` files in `paths.input_roms` with the names in the DAT. It writes `validation_report.txt` to `paths.output_reports`.
+
+### 7.4 Compare folders (`compare_folders`) — manual
+
+**Goal:** Show which files two folders have in common and which files are only in one folder.
+
+If `compare.copy_common` is `true`, the step copies the common files to `compare.output_dir`.
+
+> **Warning:** The step **deletes** `compare.output_dir` and makes it again each time it runs. Do not put your own files in that folder.
+
+### 7.5 Organize pictures (`organize_images`)
+
+**Goal:** Give each picture to the correct game. Picture names are often wrong, so the step tries three ways, from exact to fuzzy.
+
+```mermaid
+flowchart TD
+    A["Take one picture"] --> B{"Is the file extension<br/>in images.valid_extensions?"}
+    B -- No --> S1["Skip it"]
+    B -- Yes --> C{"Does the file name equal<br/>a ROM name in the DAT?"}
+    C -- Yes --> OK["Match found"]
+    C -- No --> D{"Does the cleaned name equal<br/>a game title in the DAT?"}
+    D -- Yes --> OK
+    D -- No --> E{"Is the closest title at least<br/>fuzzy_threshold similar?"}
+    E -- Yes --> OK
+    E -- No --> NO["No match.<br/>Write the name to<br/>unmatched_images.txt"]
+    OK --> F{"images.mode"}
+    F -- symlink --> L["Make a relative link<br/>no extra disk space"]
+    F -- copy --> CP["Copy the file"]
+```
+
+**How names are cleaned before the fuzzy test:** The step removes tags such as `(USA)` or `[!]`, changes letters to lowercase, and removes punctuation and extra spaces.
+
+**Pick a good `images.fuzzy_threshold`:**
+
+| Value | Result |
+|---|---|
+| `1.0` | Only exact cleaned names match. |
+| `0.80` | Good balance. **Default.** |
+| `0.0` | Everything matches. Many wrong matches. Do not use. |
+
+### 7.6 Convert to WebP (`convert_webp`)
+
+**Goal:** Change PNG and JPG pictures to WebP. The result is about 70% smaller and looks the same.
+
+- The step uses many processes at the same time. This makes it fast.
+- It skips a picture when the `.webp` file already exists.
+- It does **not** delete the originals. Use step 14 for that.
+- `webp.quality` is a number from 1 to 100. The default is 85.
+
+### 7.7 Upscale pictures (`upscale_images`) — manual
+
+**Goal:** Make small pictures larger (2× or 4×) with a neural network.
+
+| Setting | Meaning |
+|---|---|
+| `upscale.engine` | `waifu2x` (best for 2D art and pixel art) or `realesrgan` (best for 3D and photos). If `null`, the program asks you. |
+| `upscale.scale` | `2` or `4`. Scale `4` needs about four times more video memory. |
+| `upscale.post_process` | If `true`, ImageMagick sharpens each result. |
+
+You need a GPU that supports Vulkan. If the program file in `paths.bin_waifu2x` or `paths.bin_realesrgan` is missing, the step writes an error and stops.
+
+### 7.8 Optimize videos (`optimize_videos`)
+
+**Goal:** Make videos smaller with ffmpeg. Use H.265 (default) or H.264.
+
+```mermaid
+flowchart TD
+    A["Take one video"] --> B["ffprobe reads<br/>the video codec"]
+    B --> C{"smart_skip is true and<br/>codec is already correct?"}
+    C -- Yes --> SK["Skip the video"]
+    C -- No --> D["ffmpeg writes a<br/>temporary file"]
+    D --> E["Replace the original<br/>with the temporary file"]
+    E --> F{"videos.delete_original<br/>is true?"}
+    F -- Yes --> G["Delete the original"]
+    F -- No --> H["Keep the original"]
+```
+
+- `videos.crf` sets quality. Lower is better and larger. `28` is good for retro videos.
+- The program writes the new file first and replaces the old file only at the end. A crash cannot leave a broken video.
+- ffmpeg uses many CPU cores. Therefore the step uses only half of `global.threads` for its own workers.
+
+### 7.9 Make gamelist.xml (`generate_metadata`)
+
+**Goal:** Write the `gamelist.xml` file that EmulationStation reads. It lists each game with its name, picture, video, and category. The categories come from `catver.ini`.
+
+**Output:** `paths.output_xml`
+
+### 7.10 KPI report (`kpi_report`)
+
+**Goal:** Show how many files each folder has and how much disk space it uses. It writes `kpi.csv` to `paths.output_reports`.
+
+### 7.11 Port launchers (`ports_launchers`) — manual
+
+**Goal:** Make a launcher for each "port" (a native Linux game or a Windows game that runs with Wine).
+
+Each sub-folder of `ports.source_dir` is one port. For each port, the step finds the main program and writes two files to `ports.output_dir`: `autorun.sh` and a `.desktop` file.
+
+| Port type | What the step looks for | What runs |
+|---|---|---|
+| Linux | An executable file, or a `.sh` file | The file directly |
+| Windows | A file in `ports.windows_extensions` (default `.exe`) | The file with `ports.windows_runner` (default `wine`) |
+
+Options `ports.enable_gamemode` and `ports.enable_mangohud` add `gamemoderun` and `mangohud` before the command. For Windows ports, `ports.windows_environment` sets extra variables such as `ESYNC` and `FSYNC`.
+
+### 7.12 Compress ROMs (`compress_roms`)
+
+**Goal:** Change large disc images into small formats, as EmuDeck does. The step finds the system from the **name of the sub-folder** in `paths.input_roms`.
+
+| Format | Sub-folder names | Program |
+|---|---|---|
+| **CHD** | `ps1`, `psx`, `ps2`, `dreamcast`, `saturn`, `segacd`, `3do`, `neogeocd`, `pcenginecd`, `cd32` | `chdman` |
+| **RVZ** | `gamecube`, `wii` | `DolphinTool` |
+| **CSO** or **ZSO** | `psp` | `maxcso` |
+
+- Sub-folders with other names are ignored.
+- If the program for a format is missing, the step skips that system and writes a warning.
+- If the compressed file exists, the step skips it.
+- `compress.delete_original` is `false` by default. If you set it to `true`, the step deletes the source files after a good result.
+
+### 7.13 Clean originals (`clean_originals`) — manual
+
+> **This step deletes files. You cannot undo it.**
+
+**Goal:** Delete PNG and JPG pictures after a good WebP version exists.
+
+The step looks in `paths.output_imgs`. It deletes a picture only if a `.webp` file with the same name is in the same folder and is a valid file (more than 50 bytes). It asks you to type `DELETAR` before it deletes anything. It does not run without a terminal.
+
+Before you run it, do this:
+
+1. Run `emupipeline --step 14 --dry-run` and read the list.
+2. Open some WebP files and check them.
+3. Make a backup if the pictures are important.
+
+---
+
+## 8. Safe modes: dry run and audit
+
+Every step supports three modes.
+
+| Mode | Option | Changes files? | What you get |
+|---|---|---|---|
+| Normal | *(none)* | **Yes** | The real result |
+| Dry run | `--dry-run` | No | Log lines that say what the step would do |
+| Audit | `--audit` | No | The log, and a report of all planned actions |
+
+```mermaid
+flowchart LR
+    CMD["emupipeline option"] --> M{"Which mode?"}
+    M -- "none" --> N["NORMAL<br/>read and write files"]
+    M -- "--dry-run" --> D["DRY RUN<br/>only write log lines"]
+    M -- "--audit" --> A["AUDIT<br/>record each action<br/>in a report"]
+    A --> R["audit_report.json<br/>audit_report.html"]
+```
+
+**Use this routine for each new library:**
+
+1. Run `emupipeline --pipeline --dry-run`.
+2. Run `emupipeline --pipeline --audit`. Open `audit_report.html` in `paths.output_reports`.
+3. Read the list of actions. Look at the deletions with care.
+4. Run `emupipeline --pipeline`.
+
+Audit and dry-run modes only simulate the work. A step that needs the result of an earlier step can show less data in these modes.
+
+---
+
+## 9. Command line
+
+```text
+emupipeline [options]
+```
+
+| Option | Meaning |
+|---|---|
+| *(no option)* | Open the menu. |
+| `--pipeline` | Run the 8 automatic steps. |
+| `--step N` | Run one step. `N` is the menu number. |
+| `--list-steps` | Show all steps and exit. |
+| `--skip N[,N...]` | With `--pipeline`: skip these steps. Example: `--skip 6,8`. |
+| `--stop-on-error` | With `--pipeline`: stop at the first error. This is the default. |
+| `--continue-on-error` | With `--pipeline`: run the next step after an error. |
+| `--dry-run` | Do not change files. |
+| `--audit` | Do not change files. Make an audit report. |
+| `--config PATH` | Use this config file. |
+| `--threads N` | Replace `global.threads` for this run. |
+| `--check-env` | Check the external programs, then exit. |
+| `--tui` | Open the text interface. |
+| `--version` | Show the version. |
+
+### Examples
+
+```bash
+# Test the full pipeline without any change
+emupipeline --pipeline --dry-run
+
+# Run the full pipeline, but skip video optimization (8)
+emupipeline --pipeline --skip 8
+
+# Convert pictures with 12 workers
+emupipeline --step 6 --threads 12
+
+# Use a different config file
+emupipeline --config ~/other/config.yaml --pipeline
+
+# Open the menu
+emupipeline
+```
+
+### The menu
+
+The menu shows all steps in groups. Type a number and press Enter.
+
+- A step number runs that step.
+- `99` runs the full pipeline. It first checks the tools. If a step fails, it asks if it must continue.
+- `0` exits.
+
+### How the program finds `config.yaml`
+
+```mermaid
+flowchart TD
+    A["Start"] --> B{"Did you use --config<br/>or set EMUPIPELINE_CONFIG?"}
+    B -- Yes --> C{"Does that file exist?"}
+    C -- Yes --> L["Load it"]
+    C -- No --> ERR["Error: file not found"]
+    B -- No --> D{"Is there config.yaml in<br/>the current folder?"}
+    D -- Yes --> L
+    D -- No --> E{"Is there config.yaml in<br/>the project root?"}
+    E -- Yes --> L
+    E -- No --> ERR
+    L --> V{"Is Pydantic installed?"}
+    V -- Yes --> F["Full check of all values"]
+    V -- No --> G["Basic check only"]
+```
+
+If a value is wrong, the program shows the field name, the value, and the reason. It then stops before any work starts.
+
+---
+
+## 10. Text interface (TUI)
+
+The TUI shows the pipeline in your terminal. You see the steps, a live log, a progress bar, and statistics.
+
+```bash
+pip install "emupipeline[tui]"
+emupipeline --tui              # normal mode
+emupipeline --tui --dry-run    # start in dry-run mode
+```
+
+```text
+┌ EmuPipeline v5.0 ────────────────────────────────────────┐
+│ Mode: DRY-RUN                                            │
+├───────────────┬──────────────────────────────────────────┤
+│ STEPS         │ [2/8] Organize ROMs  ████░░░░░░░░         │
+│  ✓ Split DAT  │ LOG                                      │
+│  ► Organize.. │ 12:34:06 INFO RomManager Start...        │
+│  ○ Convert .. │                                          │
+│               │ STATISTICS                               │
+│               │ dats_created   4                         │
+├───────────────┴──────────────────────────────────────────┤
+│ p Pipeline  d Dry-run  a Audit  c Clear log  q Quit      │
+└──────────────────────────────────────────────────────────┘
+```
+
+| Key | Action |
+|---|---|
+| `p` | Start the pipeline |
+| `d` | Switch dry-run mode on or off |
+| `a` | Switch audit mode on or off |
+| `c` | Clear the log |
+| `Esc` | Cancel the run |
+| `q` | Quit |
+
+Symbols in the step list: `○` waiting, `►` running, `✓` done, `✗` error, `–` skipped.
+
+To change the colors, edit the `CSS` text at the top of `src/emupipeline/tui.py`. You can also set a Textual theme in the app class, for example `THEME = "nord"`.
+
+---
+
+## 11. Configuration reference
+
+The file `config.yaml.example` has a comment for each setting. Copy it to `config.yaml` and change the values.
 
 ```mermaid
 mindmap
@@ -424,897 +603,310 @@ mindmap
     paths
       dat_file
       catver_ini
-      input_roms
-      input_imgs
-      output_roms
-      output_imgs
-      output_xml
-      output_dats
-      output_reports
-      output_logs
-      videos_dir
-      upscale_input
-      upscale_output
-      bin_waifu2x
-      bin_realesrgan
+      input and output folders
+      binary paths
     roms
-      enable_igir
-      split_by_driver
       merge_mode
       filter_regions
       exclude_clones
       blacklist
-      threads_io
     images
-      mode symlink|copy
-      organization_mode
+      mode
       fuzzy_threshold
-      valid_extensions
     webp
       quality
-      delete_original
-      source_extensions
     videos
       codec
       crf
-      preset
-      delete_original
       smart_skip
-      extensions
     upscale
       engine
       scale
-      output_format
-      workers
-      post_process
-      unsharp
+    compress
+      chdman_bin
+      rvz_compression
     compare
-      output_dir
-      copy_common
     ports
-      source_dir
-      output_dir
-      windows_runner
-      enable_gamemode
-      enable_mangohud
-      windows_extensions
-      windows_environment
 ```
 
-### 5.2 config.yaml completo comentado
+### Main settings
 
-```yaml
-global:
-  base_dir: ~/emupipeline        # raiz — todos os paths relativos resolvem aqui
-  logging_level: INFO            # DEBUG | INFO | WARNING | ERROR
-  threads: 4                     # workers padrão (1-64)
-  structured_logging: false      # true → JSON lines para ingestão em log system
+| Section | Key | Default in example | Meaning |
+|---|---|---|---|
+| `global` | `base_dir` | `~/Documents/emupipeline` | Root folder. Relative paths start here. |
+| `global` | `logging_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
+| `global` | `threads` | `8` | Number of parallel workers. Use your CPU core count. |
+| `global` | `structured_logging` | `false` | `true` writes the log file as JSON. |
+| `roms` | `merge_mode` | `nonmerged` | `nonmerged`, `split`, or `merged`. |
+| `roms` | `filter_regions` | `WORLD,BRA,USA,EUR,JPN` | Region order of preference. |
+| `roms` | `exclude_clones` | `true` | Remove clone games. |
+| `roms` | `blacklist` | list of words | Remove games with these words in the title. |
+| `roms` | `threads_io` | `4` | IGIR threads. Use 2–4 for an HDD, up to 8 for an SSD. |
+| `images` | `mode` | `symlink` | `symlink` or `copy`. Use `copy` for external disks. |
+| `images` | `organization_mode` | `subfolders` | `subfolders` (by driver) or `flat`. |
+| `images` | `fuzzy_threshold` | `0.80` | From 0.0 to 1.0. |
+| `webp` | `quality` | `85` | From 1 to 100. |
+| `videos` | `codec` | `libx265` | `libx265` or `libx264`. |
+| `videos` | `crf` | `28` | From 0 to 51. Lower is better quality. |
+| `videos` | `smart_skip` | `true` | Skip videos that already have the target codec. |
+| `videos` | `delete_original` | `true` | Delete the old video after a good result. |
+| `upscale` | `engine` | `null` | `waifu2x`, `realesrgan`, or `null` (ask). |
+| `upscale` | `scale` | `2` | `2` or `4`. |
+| `compress` | `delete_original` | `false` | Delete the source disc image after a good result. |
+| `compress` | `output_dir` | `""` | Empty means "in the same folder". |
+| `compress` | `rvz_compression` | `zstd` | `zstd`, `bzip2`, `lzma`, `lzma2`, or `none`. |
+| `compress` | `rvz_level` | `5` | From 1 to 9. |
+| `compress` | `psp_format` | `cso` | `cso` or `zso`. |
 
-paths:
-  dat_file: ./FBNeo.dat          # DAT XML mestre (FBNeo, MAME, Redump…)
-  catver_ini: ./catver.ini       # Categorias de jogos (usado em gamelist.xml)
-  input_roms: ~/roms_input       # ROMs brutas (fonte)
-  input_imgs: ~/images_input     # Imagens brutas (fonte)
-  output_roms: ~/roms_organized  # ROMs após IGIR
-  output_imgs: ~/images_organized
-  output_xml: ~/gamelist.xml
-  output_dats: ~/dats_split      # DATs por driver gerados pelo DatSplitter
-  output_reports: ~/reports
-  output_logs: ~/logs
-  videos_dir: ~/videos
-  upscale_input: ~/images_organized   # entrada do upscaler
-  upscale_output: ~/images_upscaled   # saída do upscaler
-  bin_waifu2x: /opt/waifu2x/waifu2x-ncnn-vulkan
-  bin_realesrgan: /opt/realesrgan/realesrgan-ncnn-vulkan
+> **Check delete settings.** `videos.delete_original` and `compress.delete_original` can delete your files. Set them to `false` until you trust the result. In the example file, `videos.delete_original` is `true`.
 
-roms:
-  enable_igir: true
-  split_by_driver: true          # divide DAT por sourcefile (driver)
-  merge_mode: nonmerged          # nonmerged | merged | split
-  filter_regions: "WORLD,USA"    # regiões mantidas; vazio = todas
-  exclude_clones: true           # remove jogos com <cloneof>
-  generate_bios_file: false      # inclui entradas de BIOS
-  blacklist:                     # ROMs cujo driver contém esses termos são removidos
-    - adult
-    - mahjong
-    - quiz
-  threads_io: 4                  # threads do IGIR
+### Environment variable
 
-images:
-  mode: symlink                  # symlink | copy
-  organization_mode: subfolders  # subfolders (por driver) | flat
-  overwrite: false
-  fuzzy_threshold: 0.80          # [0.0-1.0] precisão do match fuzzy
-  valid_extensions:
-    - .png
-    - .jpg
-    - .jpeg
-    - .gif
-    - .webp
-
-webp:
-  quality: 85                    # [1-100]
-  delete_original: false         # use step clean_originals para deletar
-  source_extensions:
-    - .png
-    - .jpg
-
-videos:
-  codec: libx265                 # libx265 | libx264
-  crf: 28                        # [0-51] qualidade (menor = melhor)
-  preset: fast                   # ultrafast|superfast|veryfast|faster|fast|medium|slow
-  delete_original: false
-  smart_skip: true               # pula vídeos já no codec correto
-  extensions:
-    - .mp4
-    - .avi
-    - .mkv
-
-upscale:
-  engine: waifu2x                # waifu2x | realesrgan
-  scale: 2                       # 2 | 4
-  output_format: webp
-  workers: 2                     # processos paralelos do binário
-  post_process: true             # aplica unsharp mask via ImageMagick
-  unsharp: "0x1.0+1.0+0.02"     # parâmetro -unsharp do ImageMagick
-
-compare:
-  output_dir: output/common_files
-  copy_common: false
-
-ports:
-  source_dir: ~/ports            # cada subdir é um port
-  output_dir: ~/ports_launchers  # destino dos .desktop
-  windows_runner: wine           # wine | proton | bottles
-  enable_gamemode: false         # prefixar com gamemoderun
-  enable_mangohud: false         # prefixar com mangohud
-  windows_extensions:
-    - .exe
-    - .bat
-  windows_environment: {}        # WINEPREFIX etc.
-```
-
-### 5.3 Resolução de configuração
-
-```mermaid
-flowchart LR
-    ENV_VAR["$EMUPIPELINE_CONFIG\n(env var)"]
-    CWD["./config.yaml\n(diretório atual)"]
-    PKG["config.yaml\n(raiz do pacote)"]
-    ERR["FileNotFoundError"]
-
-    ENV_VAR -- existe --> LOAD[ConfigLoader.\_load]
-    ENV_VAR -- não existe --> CWD
-    CWD -- existe --> LOAD
-    CWD -- não existe --> PKG
-    PKG -- existe --> LOAD
-    PKG -- não existe --> ERR
-
-    LOAD --> PYDANTIC{Pydantic v2\ndisponível?}
-    PYDANTIC -- Sim --> VAL[Validação completa\ncom tipos e limites]
-    PYDANTIC -- Não --> FALLBACK[Validação manual\nmínima]
-    VAL & FALLBACK --> SINGLETON[cfg = ConfigLoader()\nSingleton global]
-```
-
----
-
-## 6. Steps do Pipeline
-
-### 6.1 Mapa completo de steps
-
-```mermaid
-graph LR
-    subgraph ROMS["🗂️ ROMs & DATs"]
-        DS["**1** DatSplitter\ndat_split\npipeline_order=10"]
-        RM["**2** RomManager\nrom_manager\npipeline_order=20"]
-        RV["**3** RomValidator\nvalidate_roms\npipeline_order=999"]
-        FC["**4** FolderComparator\ncompare_folders\npipeline_order=999"]
-    end
-
-    subgraph IMGS["🖼️ Imagens"]
-        IO["**5** ImageOrganizer\norganize_images\npipeline_order=50\nBaseProcessor+DAT"]
-        WC["**6** WebPConverter\nconvert_webp\npipeline_order=60\nBaseProcessor+ProcessPool"]
-        UP["**7** Upscaler\nupscale_images\npipeline_order=999"]
-        OC["**12** OriginalCleaner\nclean_originals\npipeline_order=999\nBaseProcessor"]
-    end
-
-    subgraph VID["🎬 Vídeo & Metadados"]
-        VO["**8** VideoOptimizer\noptimize_videos\npipeline_order=80\nBaseProcessor"]
-        MG["**9** MetadataGenerator\ngenerate_metadata\npipeline_order=90\nrequer DAT"]
-        KR["**10** KpiReporter\nkpi_report\npipeline_order=100"]
-    end
-
-    subgraph EXTRA["🕹️ Extras"]
-        PA["**11** PortsAutomator\nports_launchers\npipeline_order=999"]
-    end
-
-    DS -->|"DATs por driver"| RM
-    RM -->|"ROMs organizados"| IO
-    IO -->|"imagens linkadas"| WC
-    WC -->|"*.webp"| UP
-    IO --> MG
-    WC --> MG
-    VO --> MG
-    MG -->|"gamelist.xml"| KR
-
-    style ROMS fill:#1a1a2e,color:#e0e0e0,stroke:#3498db
-    style IMGS fill:#16213e,color:#e0e0e0,stroke:#9b59b6
-    style VID fill:#0f3460,color:#e0e0e0,stroke:#e67e22
-    style EXTRA fill:#1a1a2e,color:#e0e0e0,stroke:#2ecc71
-```
-
----
-
-### 6.2 Step 1 — DatSplitter
-
-**Classe:** `DatSplitter` · **ID:** `dat_split` · **Grupo:** ROMs & DATs · **Menu:** 1
-
-Lê o DAT XML mestre e gera um arquivo `.dat` separado por driver de hardware (ex: `capcom.dat`, `snk.dat`). Aplica filtros configuráveis antes de gravar.
-
-```mermaid
-flowchart LR
-    DAT["FBNeo.dat\n(DAT mestre XML)"]
-    PARSE["Parse XML\nLê todos os <game>"]
-    BL{Blacklist\nmatch?}
-    CL{É clone\n& exclude_clones?}
-    DR{split_by_driver?}
-    GROUP["Agrupa por\ngame.driver"]
-    FLAT["Arquivo único\nall_games.dat"]
-    WRITE["Grava *.dat\npor driver"]
-
-    DAT --> PARSE --> BL
-    BL -- Sim → exclui --> SKIP1[blacklisted++]
-    BL -- Não --> CL
-    CL -- Sim → exclui --> SKIP2[clone_excluded++]
-    CL -- Não --> DR
-    DR -- Sim --> GROUP --> WRITE
-    DR -- Não --> FLAT
-
-    WRITE --> STATS["Stats:\ndats_created\nblacklisted\nclone_excluded"]
-```
-
-**Configuração relevante:** `roms.split_by_driver`, `roms.blacklist`, `roms.exclude_clones`, `roms.generate_bios_file`
-
----
-
-### 6.3 Step 2 — RomManager
-
-**Classe:** `RomManager` · **ID:** `rom_manager` · **Grupo:** ROMs & DATs · **Menu:** 2
-
-Invoca o **IGIR** para verificar, renomear e organizar ROMs contra os DATs gerados pelo DatSplitter. Suporta os três modos de merge do MAME.
-
-```mermaid
-flowchart TD
-    IGIR_CHECK{igir\ndisponível?}
-    IGIR_CHECK -- Não --> ERR["error++ / log"]
-    IGIR_CHECK -- Sim --> BUILD
-
-    BUILD["Constrói comando IGIR\n--dat ./dats_split/*.dat\n--input input_roms\n--output output_roms\n--merge-mode nonmerged\n--region-filter WORLD,USA"]
-
-    RUN["subprocess.run(igir ...)"]
-    OK{returncode\n== 0?}
-    SUCCESS["success = 1"]
-    FAIL["error = 1"]
-
-    BUILD --> RUN --> OK
-    OK -- Sim --> SUCCESS
-    OK -- Não --> FAIL
-```
-
-**Modos de merge:**
-
-| Modo | Descrição |
+| Variable | Meaning |
 |---|---|
-| `nonmerged` | Cada ROM é um arquivo completo independente |
-| `merged` | Parent contém todos os clones dentro |
-| `split` | Clones contêm apenas os arquivos diferentes do parent |
+| `EMUPIPELINE_CONFIG` | Full path to a config file. The `--config` option sets this variable. |
 
 ---
 
-### 6.4 Step 5 — ImageOrganizer
+## 12. Output files and logs
 
-**Classe:** `ImageOrganizer` · **ID:** `organize_images` · **Grupo:** Imagens · **Menu:** 5
+| File | Made by | Folder | Content |
+|---|---|---|---|
+| `pipeline.log` | All steps | `paths.output_logs` | The full log. Old files rotate automatically. |
+| `*.dat` | Split DAT | `paths.output_dats` | Small DAT files. |
+| `gamelist.xml` | gamelist step | `paths.output_xml` | Game list for EmulationStation. |
+| `validation_report.txt` | Validate ROMs | `paths.output_reports` | Missing and extra games. |
+| `unmatched_images.txt` | Organize pictures | `paths.output_reports` | Pictures with no game. |
+| `kpi.csv` | KPI report | `paths.output_reports` | File counts and disk use. |
+| `metrics.json` | `--pipeline` | `paths.output_reports` | Time and counts for each step. |
+| `audit_report.json`, `audit_report.html` | `--audit` with `--pipeline` | `paths.output_reports` | List of planned actions. |
 
-Associa imagens de nomes variados aos ROMs correspondentes no DAT usando três camadas de match progressivo. Cria **symlinks relativos** ou **cópias** na pasta organizada.
+### Log format
 
-```mermaid
-flowchart TD
-    SCAN["scan(input_imgs)\n*.png, *.jpg, *.jpeg, *.webp"]
-    PAR["run_parallel(files)\nThreadPoolExecutor"]
+In the default setting, log lines are plain text. Set `global.structured_logging: true` to write JSON lines in the log file. Each JSON line has these fields:
 
-    subgraph MATCH["_match_and_place(file, out_dir)"]
-        EXT{Extensão\nválida?}
-        E1{Exact ROM\nname match}
-        E2{Exact título\nnormalizado}
-        E3{"Fuzzy match\n≥ threshold"}
-        NOMATCH[no_match]
-    end
-
-    PLACE["Destino:\nout_dir/driver/rom_name.ext\nou out_dir/rom_name.ext"]
-    OW{Existe\n& overwrite=false?}
-    DRY{DRY_RUN?}
-    AUDIT{AUDIT?}
-    LINK["symlink_to(relpath)"]
-    COPY["shutil.copy2"]
-    RECORD["AuditReport.record"]
-
-    SCAN --> PAR --> EXT
-    EXT -- Não --> SKIP["skipped_ext"]
-    EXT -- Sim --> E1
-    E1 -- Sim --> PLACE
-    E1 -- Não --> E2
-    E2 -- Sim --> PLACE
-    E2 -- Não --> E3
-    E3 -- Sim --> PLACE
-    E3 -- Não --> NOMATCH
-
-    PLACE --> OW
-    OW -- Sim --> SKIP2["skipped_exists"]
-    OW -- Não --> DRY
-    DRY -- Sim --> DRY2["dry_run"]
-    DRY -- Não --> AUDIT
-    AUDIT -- Sim --> RECORD
-    AUDIT -- Não --> MODE{mode_img}
-    MODE -- symlink --> LINK
-    MODE -- copy --> COPY
-```
-
-**Normalização para fuzzy match:**
-- Remove tags de região: `(USA)`, `[!]`, `(Europe)` etc.
-- Lowercase + ASCII-safe
-- Remove pontuação e espaços extras
-- Índice de bigramas para pré-filtrar candidatos em O(1)
+| Field | Meaning |
+|---|---|
+| `ts`, `level`, `logger`, `msg`, `thread` | Time, severity, source, message, thread ID |
+| `run_id` | A random ID. It is the same for all lines in one run. Use it to find all lines of one run. |
+| `step`, `file`, `duration_s`, `stats` | Added when the log line has them |
 
 ---
 
-### 6.5 Step 6 — WebPConverter
+## 13. Troubleshooting
 
-**Classe:** `WebPConverter` · **ID:** `convert_webp` · **Grupo:** Imagens · **Menu:** 6
+| Problem | Cause | Solution |
+|---|---|---|
+| `EMUPIPELINE_CONFIG aponta para arquivo inexistente` | The path in the variable is wrong. | Correct the path, or use `--config`. |
+| Config file not found | No `config.yaml` in any search location. | Run the command in the folder with `config.yaml`, or use `--config`. |
+| `ERRO DE CONFIGURAÇÃO` with a field name | A value in `config.yaml` is not valid. | Read the field name and message. Correct the value. |
+| `igir não encontrado` | igir is not installed. | `npm install -g igir`. Or set `roms.enable_igir: false`. |
+| ffmpeg errors | ffmpeg is missing or old. | Install ffmpeg 4.0 or newer. Run `ffmpeg -version`. |
+| `magick: command not found` | ImageMagick 7 is missing. | Install it, or set `upscale.post_process: false`. |
+| Upscale step: program not found | The path in `paths.bin_*` is wrong. | Correct the path. Make the file executable. |
+| Many pictures have no match | `fuzzy_threshold` is too high, or names are very different. | Try `0.70`. Read `unmatched_images.txt`. |
+| Step says "DAT não encontrado" | `paths.dat_file` is wrong. | Correct the path. |
+| Compress step skips a system | The tool for that format is missing, or the folder name is not in the list. | Install `chdman`, `DolphinTool`, or `maxcso`. Rename the folder. |
+| Clean step does nothing | No terminal, or no valid WebP. | Run it in a terminal. Run the WebP step first. |
+| `--tui` shows a Textual error | Textual is not installed. | `pip install "emupipeline[tui]"`. |
 
-Converte PNG/JPG em WebP usando Pillow com **ProcessPoolExecutor** (bypassa o GIL do Python para conversão real em paralelo).
-
-```mermaid
-flowchart LR
-    SCAN["scan(input_imgs)\n*.png, *.jpg"]
-    POOL["ProcessPoolExecutor\n(CPU-bound, bypassa GIL)"]
-    CHECK{"*.webp já\nexiste?"}
-    SKIP["skipped_exists"]
-    OPEN["Image.open(src)"]
-    CONV["img.save(dest, 'WEBP'\nquality=85)"]
-    DONE["converted++"]
-
-    SCAN --> POOL --> CHECK
-    CHECK -- Sim --> SKIP
-    CHECK -- Não --> OPEN --> CONV --> DONE
-```
-
-> **Por que ProcessPool?** Pillow é CPU-bound (compressão de imagem). O GIL do CPython impede paralelismo real com threads — o ProcessPool resolve isso criando processos separados.
+For more detail, set `global.logging_level: DEBUG` and read `pipeline.log`.
 
 ---
 
-### 6.6 Step 7 — Upscaler
+## 14. For developers
 
-**Classe:** `Upscaler` · **ID:** `upscale_images` · **Grupo:** Imagens · **Menu:** 7
-
-Aumenta a resolução de imagens 2× ou 4× usando redes neurais. Pós-processa com **ImageMagick unsharp mask** para nitidez. Robusto: erros por imagem são logados individualmente, não abortam o processo.
+### 14.1 Layers
 
 ```mermaid
-flowchart TD
-    BIN{Binário\nexiste?}
-    BIN -- Não --> EARLYRET["retorna (log error)"]
-    BIN -- Sim --> IMGS
-
-    IMGS{Imagens\nno diretório?}
-    IMGS -- Não --> EARLYRET2["retorna"]
-    IMGS -- Sim --> DRYC
-
-    DRYC{DRY_RUN?}
-    DRYC -- Sim --> EARLYRET3["retorna (log)"]
-    DRYC -- Não --> RUN
-
-    RUN["subprocess.run(\n  [bin, -i input_dir,\n   -o output_dir,\n   -s scale, -f webp,\n   -j workers]\n)"]
-
-    ERR{CalledProcess\nError?}
-    ERR -- Sim --> ESTAT["error = 1"]
-    ERR -- Não --> PSTAT["processed++"]
-
-    PSTAT --> POST{post_process\n&& magick OK?}
-    POST -- Não --> FIM([fim])
-    POST -- Sim --> LOOP
-
-    subgraph LOOP["Para cada *.webp no output"]
-        MAG["magick img -unsharp\n0x1.0+1.0+0.02 img"]
-        MERR{CalledProcess\nError?}
-        MERR -- Sim --> WLOG["log.warning(stderr)"]
-        MERR -- Não --> MSTAT["post_processed++"]
+graph TB
+    subgraph UI["User interface"]
+        CLI["cli.py<br/>menu and options"]
+        TUI["tui.py<br/>Textual interface"]
     end
 
-    RUN --> ERR
-    LOOP --> FIM
+    subgraph REG["Registry (registry.py)"]
+        AUTO["Finds steps in steps/<br/>and in plugins"]
+    end
+
+    subgraph STEPS["Steps (steps/*.py)"]
+        S["13 step classes"]
+    end
+
+    subgraph CORE["Core (core/*.py)"]
+        CFG["config.py<br/>config_schema.py"]
+        PROC["processor.py<br/>BaseProcessor, WholeRunStep"]
+        DAT["dat_manager.py<br/>DatMaster"]
+        MODE["execution_mode.py<br/>modes and AuditReport"]
+        TXN["transaction.py<br/>safe file writes"]
+        MET["metrics.py"]
+        LOG["logger.py"]
+        ENV["env_checker.py"]
+    end
+
+    CLI --> REG
+    TUI --> REG
+    REG --> STEPS
+    STEPS --> CORE
 ```
 
-**Stats produzidas:** `processed`, `post_processed`, `error`
+### 14.2 Step base classes
 
----
+Every step class has a `meta` object (`StepMeta`) and a `run()` method.
 
-### 6.7 Step 8 — VideoOptimizer
+| Base class | Use it when | You write |
+|---|---|---|
+| `BaseProcessor` | The step handles many files, one by one, in parallel | `process_file(path)` |
+| `WholeRunStep` | The step works on a whole folder in one run | `run()` |
 
-**Classe:** `VideoOptimizer` · **ID:** `optimize_videos` · **Grupo:** Vídeo & Metadados · **Menu:** 8
+`BaseProcessor` gives you:
 
-Re-encoda vídeos para H.265 (ou H.264) com **ffmpeg**. O modo **smart-skip** usa **ffprobe** para verificar o codec atual e evitar re-encodings desnecessários. Usa `StagingTransaction` para escrita atômica.
-
-```mermaid
-sequenceDiagram
-    participant V as Vídeo
-    participant P as ffprobe
-    participant F as ffmpeg
-    participant T as StagingTransaction
-    participant D as Disco
-
-    V->>P: codec_name?
-    P-->>V: hevc / h264 / mpeg4 / ...
-
-    alt smart_skip=true e codec == alvo
-        V->>D: skipped_codec (sem mudança)
-    else
-        V->>T: stage(tmp_file)
-        T->>F: -c:v libx265 -crf 28 -preset fast
-        F-->>T: tmp_file pronto
-        T->>D: rename(tmp → original) atômico
-        D-->>V: optimized++
-    end
-```
-
-**Controle de oversubscription:** O VideoOptimizer divide os `threads` pela metade — metade como workers Python, metade entregue ao ffmpeg via `-threads N`. Isso evita trashing quando muitos ffmpeg rodam em paralelo.
-
----
-
-### 6.8 Step 9 — MetadataGenerator
-
-**Classe:** `MetadataGenerator` · **ID:** `generate_metadata` · **Grupo:** Vídeo & Metadados · **Menu:** 9
-
-Gera o `gamelist.xml` no formato EmulationStation combinando ROMs, imagens, vídeos e categorias do `catver.ini`.
+- `scan()` to list files;
+- `run_parallel()` to use threads;
+- `update_stat()` to count results (use it; it is thread-safe);
+- `run_subprocess()` to call a program, with a time limit and optional retries;
+- the current mode and the audit report.
 
 ```mermaid
-flowchart TD
-    ROMS["output_roms/*.zip"] & IMGS["output_imgs/**"] & CATVER["catver.ini"] & DAT["DatMaster"] --> GEN
-
-    GEN["MetadataGenerator.run()"]
-
-    subgraph XML["gamelist.xml"]
-        GAME["<game>\n  <path>./roms/sf2.zip</path>\n  <name>Street Fighter II</name>\n  <image>./images/sf2.png</image>\n  <genre>Versus Fighting</genre>\n  <video>./videos/sf2.mp4</video>\n</game>"]
-    end
-
-    GEN --> STAT["Stats: entries"]
-    GEN --> XML
-```
-
----
-
-### 6.9 Step 10 — KpiReporter
-
-**Classe:** `KpiReporter` · **ID:** `kpi_report` · **Grupo:** Vídeo & Metadados · **Menu:** 10
-
-Mede e reporta uso de disco e contagem de arquivos em todos os diretórios relevantes do projeto. Exporta `kpi.csv` com `csv.writer` (quoting correto para labels com vírgulas).
-
-**Diretórios analisados:** ROMs entrada, ROMs saída, Imagens entrada, Imagens saída, Vídeos.
-
----
-
-### 6.10 Step 11 — PortsAutomator
-
-**Classe:** `PortsAutomator` · **ID:** `ports_launchers` · **Grupo:** Extras · **Menu:** 11
-
-Gera launchers para ports (jogos Linux nativos ou Windows via Wine). Para cada subdiretório em `ports.source_dir`, detecta o executável principal e cria `autorun.sh` + `game.desktop`.
-
-```mermaid
-flowchart TD
-    SCAN["scan(source_dir)\n1 subdir = 1 port"]
-
-    subgraph DETECT["_find_executable(port_dir)"]
-        LX["Busca executável Linux\n(bit x, sem extensão .exe)"]
-        SH["Busca *.sh"]
-        EX["Busca *.exe / *.bat\n(Windows)"]
-        NONE["None → skipped_no_exec"]
-    end
-
-    subgraph LINUX["Port Linux"]
-        LSCRIPT["autorun.sh\n#!/bin/bash\n[gamemoderun] [mangohud]\n./game_executable"]
-        LDESK[".desktop\nExec=bash autorun.sh"]
-    end
-
-    subgraph WINDOWS["Port Windows"]
-        WSCRIPT["autorun.sh\n#!/bin/bash\nexport WINEPREFIX=...\n[gamemoderun] wine ./game.exe"]
-        WDESK[".desktop\nExec=bash autorun.sh"]
-    end
-
-    SCAN --> DETECT
-    LX -- encontrado --> LINUX
-    SH -- encontrado --> LINUX
-    EX -- encontrado --> WINDOWS
-    LINUX & WINDOWS -->|"chmod +x autorun.sh"| WRITE
-    WRITE["created++"]
-
-    DETECT -- falhou --> NONE
-```
-
-**Wrappers suportados:** `gamemoderun` (CPU governor), `mangohud` (overlay FPS), `wine` / `proton` / `bottles`.
-
----
-
-### 6.11 Step 12 — OriginalCleaner
-
-**Classe:** `OriginalCleaner` · **ID:** `clean_originals` · **Grupo:** Imagens · **Menu:** 12
-
-> ⚠️ **Operação irreversível** — exclui arquivos PNG/JPG originais. Execute apenas após confirmar que os WebPs estão corretos.
-
-Remove arquivos PNG/JPG **somente se** um `.webp` correspondente de tamanho maior que zero existir no mesmo diretório. Usa `BaseProcessor` com ThreadPool.
-
----
-
-## 7. Módulos Core
-
-### 7.1 Visão de dependências entre módulos
-
-```mermaid
-graph TD
-    CLI[cli.py] --> REG[registry.py]
-    CLI --> ENV[env_checker.py]
-    CLI --> MODE[execution_mode.py]
-
-    REG --> STEPS["steps/*.py"]
-    STEPS --> PROC[processor.py]
-    STEPS --> CFG[config.py]
-    STEPS --> DAT[dat_manager.py]
-    STEPS --> MODE
-
-    PROC --> CFG
-    PROC --> MODE
-    PROC --> TXN[transaction.py]
-    PROC --> METRICS[metrics.py]
-
-    CFG --> SCHEMA[config_schema.py]
-    CFG --> LOG[logger.py]
-
-    MODE --> AUDIT_MOD["AuditReport\n(em execution_mode.py)"]
-
-    style CLI fill:#e74c3c,color:#fff
-    style CFG fill:#f39c12,color:#fff
-    style PROC fill:#9b59b6,color:#fff
-    style DAT fill:#27ae60,color:#fff
-```
-
-### 7.2 ConfigLoader — Singleton e validação
-
-```mermaid
-stateDiagram-v2
-    [*] --> Uninitialized
-
-    Uninitialized --> Loading : primeira instância\n(ConfigLoader.__new__)
-    Loading --> SearchEnv : EMUPIPELINE_CONFIG?
-    SearchEnv --> Found : env var existe
-    SearchEnv --> SearchCWD : não existe
-    SearchCWD --> Found : config.yaml em ./
-    SearchCWD --> SearchPkg : não existe
-    SearchPkg --> Found : config.yaml no pacote
-    SearchPkg --> Error : não existe
-
-    Found --> Validating : _load()
-    Validating --> PydanticV2 : pydantic disponível
-    Validating --> ManualVal : pydantic ausente
-    PydanticV2 --> Ready
-    ManualVal --> Ready
-
-    Error --> [*] : FileNotFoundError
-
-    Ready --> Ready : get(section, key)\nretorna do cache
-    Ready --> Uninitialized : _instance = None\n(reset em testes)
-```
-
-### 7.3 DatMaster — Busca fuzzy de 3 camadas
-
-```mermaid
-flowchart TD
-    Q["search(filename, threshold)"] --> PREP["Extrai stem:\n'sf2.png' → 'sf2'"]
-
-    PREP --> L1{Layer 1:\nrom_map[stem]}
-    L1 -- hit --> R1[("GameInfo\n(exact_rom)")]
-    L1 -- miss --> L2
-
-    L2["normalize(stem)"] --> L2C{Layer 2:\ntitle_map[normalized]}
-    L2C -- hit --> R2[("GameInfo\n(exact_title)")]
-    L2C -- miss --> L3
-
-    L3["bigram_candidates(normalized)\n→ pré-filtra O(1)"] --> SM["SequenceMatcher\nsobre candidatos"]
-    SM --> THR{score\n≥ threshold?}
-    THR -- Sim --> R3[("GameInfo\n(fuzzy)")]
-    THR -- Não --> R4[("None\n(no_match)")]
-```
-
-**Hash híbrido do DAT** (para cache):
-- Lê 512 KB do início + 64 KB do fim do arquivo
-- Detecta adições ao final (frequentes em atualizações do FBNeo)
-- Cache pickled com version + fingerprint — invalida automaticamente quando o DAT muda
-
-### 7.4 StagingTransaction — Atomicidade
-
-```mermaid
-sequenceDiagram
-    participant S as Step
-    participant T as StagingTransaction
-    participant FS as Sistema de Arquivos
-
-    S->>T: __enter__()
-    Note over T: cria tmp_dir em TMPDIR
-
-    loop para cada arquivo
-        S->>T: stage(content, dest_path)
-        T->>FS: escreve em tmp_dir/hash
-    end
-
-    S->>T: commit()
-    loop para cada (tmp, dest)
-        T->>FS: os.replace(tmp → dest)\n[atômico no mesmo FS]
-        Note over T: fallback: shutil.copy2\n+ unlink se cross-FS
-    end
-    T-->>S: OK
-
-    alt Exceção
-        S->>T: __exit__(exc)
-        T->>T: rollback()
-        T->>FS: rmtree(tmp_dir)
-    end
-```
-
-### 7.5 ExecutionMode e AuditReport
-
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> NORMAL : padrão
-    [*] --> DRY_RUN : --dry-run
-    [*] --> AUDIT : --audit
-
-    state NORMAL {
-        [*] --> IO_Real
-        IO_Real : Leitura + Escrita\nnormais
+classDiagram
+    class StepMeta {
+        id
+        menu_number
+        label
+        group
+        description
+        requires_dat
+        pipeline_order
     }
-
-    state DRY_RUN {
-        [*] --> Simula
-        Simula : log.debug "would do X"\nZero I/O
+    class BaseProcessor {
+        run_parallel()
+        scan()
+        update_stat()
+        run_subprocess()
+        process_file()*
     }
-
-    state AUDIT {
-        [*] --> Grava
-        Grava : AuditReport.record()\nZero I/O de dados
-        Grava --> Export : fim do step
-        Export : JSON / HTML\n(summary impresso)
+    class WholeRunStep {
+        run()*
     }
+    class ExecutionMode {
+        NORMAL
+        DRY_RUN
+        AUDIT
+    }
+    class AuditReport {
+        record()
+        export_json()
+        export_html()
+    }
+    BaseProcessor <|-- WholeRunStep
+    BaseProcessor --> ExecutionMode
+    BaseProcessor --> AuditReport
+    BaseProcessor --> StepMeta
 ```
 
----
+### 14.3 Add a new step
 
-## 8. Modos de Execução
-
-| Modo | Flag CLI | I/O real | Arquivo gerado | Uso |
-|---|---|---|---|---|
-| `NORMAL` | *(padrão)* | ✅ | — | Produção |
-| `DRY_RUN` | `--dry-run` | ❌ | — | Validar antes de executar |
-| `AUDIT` | `--audit` | ❌ | `audit_report.json` + `.html` | Revisão de operações destrutivas |
-
-### Injeção de modo nos steps
+1. Make `src/emupipeline/steps/step_<name>.py`.
+2. Make a class. Add the `@register` decorator and a `StepMeta`.
+3. Use a free `menu_number`. Use `pipeline_order = 999` for a manual step.
+4. In your code, check the mode before you write any file. In `DRY_RUN`, only log. In `AUDIT`, call `self._audit.record(...)`.
+5. Add tests in `tests/unit/test_steps/`.
 
 ```python
-# CLI instancia cada step com o modo correto
-upscaler = Upscaler(mode=ExecutionMode.DRY_RUN)
-upscaler.run()
-# → nenhum subprocess é chamado, nenhum arquivo criado
+from emupipeline.core.processor import WholeRunStep
+from emupipeline.core.registry import register
+from emupipeline.core.step_interface import StepMeta
+
+
+@register
+class HelloStep(WholeRunStep):
+    meta = StepMeta(
+        id="hello",
+        menu_number=20,
+        label="Say hello",
+        group="Extras",
+        description="Example step.",
+        pipeline_order=999,
+    )
+
+    def run(self, **kwargs):
+        self.logger.info("Hello")
+        self.update_stat("processed")
 ```
 
-O modo é passado ao construtor — nunca modificado externamente (sem monkey-patching). Isso garante thread-safety e testabilidade.
+Outside packages can add steps with the entry point group `emupipeline.steps` in their `pyproject.toml`.
 
----
+### 14.4 Safe file writes
 
-## 9. CLI — Interface de Linha de Comando
+`StagingTransaction` writes to a temporary file first. At the end it renames the file to its final name in one operation. If an error occurs, it deletes the temporary files. Therefore a crash does not leave half-written files.
 
-```mermaid
-flowchart TD
-    START(["emupipeline [options]"]) --> PARSE["argparse\n--config, --dry-run,\n--audit, --pipeline,\n--check-env, --step N"]
-
-    PARSE --> CHECK_ENV{--check-env?}
-    CHECK_ENV -- Sim --> ENV_REPORT["EnvironmentChecker.report()\nimprime tabela de deps"]
-    CHECK_ENV -- Não --> LOAD_CFG
-
-    LOAD_CFG["ConfigLoader()\n(singleton via env ou CWD)"]
-
-    LOAD_CFG --> PIPE{--pipeline?}
-    PIPE -- Sim --> AUTO["get_pipeline_steps()\nordenado por pipeline_order"]
-    PIPE -- Não --> STEP{--step N?}
-    STEP -- Sim --> ONE["get_by_menu_number(N)"]
-    STEP -- Não --> MENU["Menu interativo\n(grupos + numeração)"]
-
-    AUTO & ONE --> EXEC
-    MENU -->|"usuário escolhe"| EXEC
-
-    EXEC["Instancia step(mode=mode, audit=audit)\nChama step.run(**kwargs)\nImprime get_stats()"]
-```
-
-### Exemplos de uso
+### 14.5 Tests
 
 ```bash
-# Pipeline completo em modo real
-emupipeline --pipeline
+pip install -e ".[dev]"
 
-# Simular o pipeline sem modificar nada
-emupipeline --pipeline --dry-run
-
-# Auditar apenas a organização de imagens
-emupipeline --step 5 --audit
-
-# Usar config alternativo
-emupipeline --config /path/to/custom.yaml --pipeline
-
-# Verificar dependências do ambiente
-emupipeline --check-env
-
-# Menu interativo
-emupipeline
+pytest                 # all tests, with coverage (minimum 75%)
+pytest --no-cov -q     # faster, no coverage
+pytest tests/unit/test_steps/test_clean.py -v   # one file
 ```
 
----
-
-## 10. Testes
-
-### 10.1 Estrutura de testes
-
-```
-tests/
-├── conftest.py              # fixtures globais
-│   ├── tmp_project          # dirs do projeto em tmp_path
-│   ├── sample_dat           # DAT XML mínimo (4 jogos)
-│   └── config_factory       # fábrica de config.yaml isolado
-├── unit/
-│   ├── test_config.py       # ConfigLoader + Pydantic
-│   ├── test_dat_manager.py  # DatMaster busca 3 camadas
-│   ├── test_execution_mode.py # AuditReport thread-safety
-│   ├── test_transaction.py  # StagingTransaction atomicidade
-│   └── test_steps/
-│       ├── test_organize.py # ImageOrganizer fuzzy match
-│       ├── test_upscale.py  # Upscaler subprocess + ImageMagick
-│       ├── test_ports.py    # PortsAutomator launchers
-│       ├── test_optimize.py # VideoOptimizer smart-skip
-│       └── test_dat_split.py
-└── integration/
-    └── test_pipeline_smoke.py
-```
-
-### 10.2 Padrões de teste
-
-```mermaid
-flowchart LR
-    subgraph FIXTURES["Fixtures (conftest.py)"]
-        TMP["tmp_project\ncria estrutura de dirs\nem tmp_path"]
-        DAT["sample_dat\nDAT XML com 4 jogos\n(sf2, sf2ce, kof97, mahjong)"]
-        CFG["config_factory\ncria config.yaml\nreseta singleton\natualiza cfg_module.cfg"]
-    end
-
-    subgraph ISOLAÇÃO["Isolação de Singleton"]
-        RST["cfg_module.ConfigLoader._instance = None"]
-        NEW["new_cfg = ConfigLoader()\n(lê EMUPIPELINE_CONFIG)"]
-        UPD["cfg_module.cfg = new_cfg\n⚠️ crítico: atualiza referência\ndo módulo processor.py"]
-    end
-
-    subgraph MOCK["Mocking (unittest.mock)"]
-        SP["patch('subprocess.run')\ncontrola chamadas externas"]
-        SW["patch('shutil.which')\nsimula presença de magick"]
-        BIN["_REAL_BIN = '/usr/bin/false'\n(existe no Linux)"]
-    end
-
-    CFG --> ISOLAÇÃO
-    MOCK --> TESTS["170+ testes\n✅ passando"]
-```
-
-### 10.3 Executar os testes
-
-```bash
-# Todos os testes com cobertura
-pytest --cov=emupipeline --cov-report=html
-
-# Apenas steps críticos
-pytest tests/unit/test_steps/ -v
-
-# Um step específico
-pytest tests/unit/test_steps/test_upscale.py -v
-
-# Sem cobertura (mais rápido)
-pytest --no-cov -v
-```
-
----
-
-## 11. Troubleshooting
-
-### Diagnóstico rápido
-
-```mermaid
-flowchart TD
-    ERR["❌ Problema"]
-
-    ERR --> T1{FileNotFoundError\nconfig.yaml}
-    T1 --> S1["export EMUPIPELINE_CONFIG=/path/to/config.yaml\nou rode do diretório com config.yaml"]
-
-    ERR --> T2{igir não\nencontrado}
-    T2 --> S2["npm install -g igir\nou adicione ao PATH"]
-
-    ERR --> T3{ffmpeg error\nnão converte}
-    T3 --> S3["sudo dnf install ffmpeg\nVerifique: ffmpeg -version"]
-
-    ERR --> T4{magick: command\nnot found}
-    T4 --> S4["sudo dnf install ImageMagick\nVerifique: magick --version"]
-
-    ERR --> T5{Upscaler:\nbinário não encontrado}
-    T5 --> S5["Verifique paths.bin_waifu2x\nou paths.bin_realesrgan em config.yaml"]
-
-    ERR --> T6{Imagens não\nmatched}
-    T6 --> S6["Reduza images.fuzzy_threshold\n(ex: 0.70)\nVeja reports/unmatched_images.txt"]
-```
-
-### Variáveis de ambiente úteis
-
-| Variável | Uso |
+| Folder | Content |
 |---|---|
-| `EMUPIPELINE_CONFIG` | Caminho alternativo para `config.yaml` |
-| `EMUPIPELINE_LOG_LEVEL` | Override de nível de log (DEBUG/INFO/WARNING) |
+| `tests/unit/` | Tests for core modules and each step |
+| `tests/integration/` | Smoke test of the whole pipeline |
+| `tests/e2e/` | Full run with sample data |
+| `tests/conftest.py` | Shared fixtures: `tmp_project`, `sample_dat`, `config_factory` |
 
----
+Use `config_factory` in a test to get an isolated config. It resets the config singleton for you.
 
-## 12. Glossário
-
-| Termo | Definição |
-|---|---|
-| **DAT** | Arquivo XML descrevendo ROMs com checksums (CRC/SHA1). Mantido por projetos como FBNeo, MAME, Redump |
-| **Driver** | Código emulador de hardware (`sourcefile` no DAT, ex: `capcom/cps1.cpp`) |
-| **IGIR** | Ferramenta Node.js para organizar e verificar ROMs contra DATs |
-| **Fuzzy match** | Comparação aproximada de strings usando bigramas + SequenceMatcher |
-| **Smart-skip** | Verificação do codec atual do vídeo antes de re-encodar |
-| **CRF** | Constant Rate Factor — controla qualidade/tamanho no ffmpeg (0=melhor, 51=pior) |
-| **Nonmerged** | Modo ROM onde cada jogo tem todos os arquivos necessários independentemente |
-| **Symlink relativo** | Link simbólico cujo caminho é relativo ao diretório destino (portável) |
-| **StagingTransaction** | Padrão write-to-temp + atomic-rename para evitar arquivos corrompidos |
-| **AuditReport** | Registro de operações planejadas sem I/O real (modo AUDIT) |
-| **Pipeline order** | Número que define a ordem de execução automática dos steps |
-| **Bigram index** | Índice de pares de caracteres para busca fuzzy eficiente |
-| **ProcessPool** | Pool de processos separados que bypassam o GIL do Python |
-| **Blacklist** | Lista de termos que excluem ROMs (ex: `adult`, `mahjong`) |
-| **Clone** | ROM derivado de um parent, com modificações (ex: `sf2ce` cloneof `sf2`) |
-| **gamelist.xml** | Formato de metadados do EmulationStation para frontend de emulação |
-| **Oversubscription** | Excesso de threads/processos causando degradação de desempenho |
-
----
-
-## Contribuindo
+### 14.6 Code quality
 
 ```bash
-# Setup de desenvolvimento
-pip install -e ".[all]"
-pre-commit install
-
-# Rodar testes antes de commitar
-pytest --no-cov -v
-
-# Verificar formatação
-ruff check src/ tests/
+ruff check src/ tests/          # lint
+ruff format --check src/ tests/ # format
+mypy src/emupipeline/           # types
+pre-commit install              # run checks before each commit
 ```
 
-Pull requests são bem-vindos. Veja [CONTRIBUTING.md](CONTRIBUTING.md) para o guia completo.
+GitHub Actions runs these checks and the tests on Python 3.10, 3.11, and 3.12.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution rules and [CHANGELOG.md](CHANGELOG.md) for the version history.
 
 ---
 
-<div align="center">
+## 15. Glossary
 
-**EmuPipeline v5.0** — feito com ❤️ para a comunidade de emulação
+| Term | Meaning |
+|---|---|
+| **Audit mode** | A mode that records all planned actions in a report. It does not change files. |
+| **Bigram** | A pair of letters next to each other. The picture matcher uses bigrams to find similar names fast. |
+| **Blacklist** | A list of words. A game with one of these words in its title is removed. |
+| **catver.ini** | A file that gives a category to each arcade game. |
+| **CHD** | A compressed disc-image format (MAME). |
+| **Clone** | A game that is a changed copy of a parent game. |
+| **CRF** | "Constant Rate Factor". It sets video quality in ffmpeg. 0 is best and 51 is worst. |
+| **CSO / ZSO** | Compressed PSP disc-image formats. |
+| **DAT file** | An XML list of correct games and their checksums. |
+| **Driver** | The hardware that a game runs on. |
+| **Dry run** | A mode that writes log lines only. It does not change files. |
+| **EmulationStation** | A game menu program. It reads `gamelist.xml`. |
+| **Fuzzy match** | A test that finds names that are almost the same. |
+| **gamelist.xml** | The game list file for EmulationStation. |
+| **H.265 (HEVC)** | A video codec that makes smaller files than H.264. |
+| **IGIR** | A program that checks and sorts ROMs against DAT files. |
+| **Menu number** | The number of a step in the menu and in `--step N`. |
+| **Merge mode** | How clone games are stored: `nonmerged`, `split`, or `merged`. |
+| **Pipeline** | A group of steps that run in a fixed order. |
+| **Pipeline order** | A number. Steps with a low number run first. `999` means "manual only". |
+| **Port** | A game that runs on Linux directly, or on Windows through Wine. |
+| **ROM** | A file that holds a game. |
+| **RVZ** | A compressed disc-image format for GameCube and Wii. |
+| **Smart skip** | Skip a video when its codec is already correct. |
+| **Step** | One task in the pipeline. |
+| **Symlink** | A small file that points to another file. It uses almost no disk space. |
+| **Upscale** | Make a picture larger with a neural network. |
+| **WebP** | A picture format that gives small files. |
 
-[Issues](https://github.com/rtasistemas/evs/issues) · [Releases](https://github.com/rtasistemas/evs/releases) · [CHANGELOG](CHANGELOG.md)
+---
 
-</div>
+EmuPipeline 5.0 · [Issues](https://github.com/rtasistemas/evs/issues) · [Releases](https://github.com/rtasistemas/evs/releases) · [Changelog](CHANGELOG.md)
